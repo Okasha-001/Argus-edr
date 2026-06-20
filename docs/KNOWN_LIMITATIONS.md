@@ -12,8 +12,10 @@ Stated plainly, because a security tool that hides its gaps is dangerous.
 - **openat is write-only.** Read-only opens are dropped in-kernel to spare the
   ring buffer, so read-based detections (e.g. `/etc/shadow` read) rely on the
   LSM `file_open` hook or replay rather than the openat firehose.
-- **No in-kernel DNS parsing.** Port-53 connections are visible; query names are
-  not yet extracted, so domain rules are not shipped.
+- **DNS capture is UDP `sendto` only.** Query names are extracted (the sensor
+  forwards the raw query bytes from a port-53 `sendto`; the agent parses
+  `dns.question.name`), but `sendmsg`-based, TCP and IPv6 resolvers are not yet
+  covered, so a resolver using those paths is not seen.
 - **IPv4 only in the wire struct.** The network fields carry IPv4; IPv6 endpoints
   are not yet represented in `struct event`.
 - **Syscall sensors are offline-verified, live-load pending.** The ptrace, kernel-

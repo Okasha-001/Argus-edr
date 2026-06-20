@@ -28,6 +28,7 @@ const (
 	EventMemfd       EventType = 14
 	EventMmapExec    EventType = 15
 	EventPrivChange  EventType = 16
+	EventDNS         EventType = 17
 )
 
 var eventActions = map[EventType]string{
@@ -47,6 +48,7 @@ var eventActions = map[EventType]string{
 	EventMemfd:       "memfd_create",
 	EventMmapExec:    "mmap_exec",
 	EventPrivChange:  "setuid",
+	EventDNS:         "dns",
 }
 
 var actionTypes = func() map[string]EventType {

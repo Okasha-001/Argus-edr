@@ -16,6 +16,13 @@ Every shipped rule, its ATT&CK mapping, and what it keys on. Rules live in
 | R-0014 | high | T1070 Indicator Removal | unlink/rename under `/var/log` |
 | R-0015 | high | T1548.001 Setuid/Setgid | chmod setting the setuid bit |
 | R-0016 | medium | T1070.003 Clear Command History | unlink/rename of `.bash_history` |
+| R-0060 | high | T1055 Process Injection | `ptrace` attach/poke into another process |
+| R-0061 | high | T1547.006 Kernel Modules | kernel module load (`init_module`) |
+| R-0062 | medium | T1059 Command & Scripting | `bpf()` syscall from an unexpected process |
+| R-0063 | high | T1620 Reflective Code Loading | fileless staging via `memfd_create` |
+| R-0064 | medium | T1055 Process Injection | writable+executable (RWX) memory mapping |
+| R-0065 | high | T1548 Abuse Elevation Control | `setuid(0)` privilege escalation |
+| R-0066 | high | T1071.004 Application Layer Protocol: DNS | DNS query with an overlong (tunneling) label |
 
 R-0007 is the only rule that defaults to a `kill` response (and only when
 enforcement is enabled). All others are alert-only by default.
@@ -27,8 +34,10 @@ enforcement is enabled). All others are alert-only by default.
   `/etc/shadow`) fires from replayed streams and from the BPF-LSM `file_open`
   hook, but **not** from the openat firehose. Wiring `file_open` for targeted
   read detection is tracked in the roadmap.
-- **No DNS-name capture yet.** Connections to port 53 are seen, but the query
-  name is not parsed in-kernel, so domain-based rules are not shipped.
+- **DNS names are captured from UDP `sendto` to port 53.** The sensor forwards
+  the raw query bytes and the agent parses the name into `dns.question.name`
+  (keeping the kernel side dumb). `sendmsg`-based, TCP and IPv6 resolvers are not
+  yet covered (see KNOWN_LIMITATIONS).
 - **argv may be truncated** at `MAX_ARGS_LEN` and is captured at execve entry
   (see KNOWN_LIMITATIONS for the TOCTOU note).
 

@@ -55,6 +55,7 @@ var sensorAttachments = []attachSpec{
 	{"handle_memfd", "tp", "syscalls", "sys_enter_memfd_create"},
 	{"handle_mmap_file", "kprobe", "", "security_mmap_file"},
 	{"handle_setuid", "tp", "syscalls", "sys_enter_setuid"},
+	{"handle_sendto", "tp", "syscalls", "sys_enter_sendto"},
 }
 
 // EBPFSource loads the objects and feeds decoded events into the pipeline.

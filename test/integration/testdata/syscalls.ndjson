@@ -4,3 +4,4 @@
 {"@timestamp":"2026-06-20T12:00:03Z","host":"web-01","action":"memfd_create","process":{"pid":704,"ppid":1,"name":"dropper"},"file":{"path":"payload"}}
 {"@timestamp":"2026-06-20T12:00:04Z","host":"web-01","action":"mmap_exec","process":{"pid":705,"ppid":1,"name":"shellcode"},"syscall":{"request":6}}
 {"@timestamp":"2026-06-20T12:00:05Z","host":"web-01","action":"setuid","process":{"pid":706,"ppid":1,"name":"sudo-clone"},"syscall":{"new_uid":0}}
+{"@timestamp":"2026-06-20T12:00:06Z","host":"web-01","action":"dns","process":{"pid":707,"ppid":1,"name":"backdoor"},"network":{"domain":"dGhpc2lzYXZlcnlsb25nZG5zdHVubmVsbGFiZWxjYXJyeWluZ2V4ZmlsZGF0YQ.t.evil.example","dst_ip":"203.0.113.53","dst_port":53}}

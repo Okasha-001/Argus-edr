@@ -13,3 +13,21 @@
     all:
       - { field: event.type, op: eq, value: connect }
       - { field: destination.port, op: in, value: [4444, 1337, 31337, 9001, 5555, 6666] }
+
+- id: R-0066
+  name: Probable DNS tunneling (overlong query label)
+  description: >
+    A DNS query carried a single label far longer than hostnames normally use —
+    the signature of data smuggled inside DNS by tools like iodine, dnscat2 and
+    dns2tcp. Benign names rarely pack 50+ encoded characters into one label.
+    Note: content-addressed hosts (e.g. IPFS base32 gateways) can also trip this.
+  severity: high
+  risk_score: 45
+  technique:
+    id: T1071.004
+    name: "Application Layer Protocol: DNS"
+    tactic: command-and-control
+  match:
+    all:
+      - { field: event.type, op: eq, value: dns }
+      - { field: dns.question.name, op: regex, value: '[A-Za-z0-9+/=_-]{50,}' }

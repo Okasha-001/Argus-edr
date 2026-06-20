@@ -133,3 +133,52 @@ func TestDecodeOpenIsNotMisreadAsNetwork(t *testing.T) {
 		t.Errorf("open event should have no destination ip, got %q", event.Network.DstIP)
 	}
 }
+
+func TestDecodeDNSParsesQueriedName(t *testing.T) {
+	raw := make([]byte, WireSize)
+	order := binary.NativeEndian
+	order.PutUint32(raw[offType:], uint32(model.EventDNS))
+	order.PutUint16(raw[offFamily:], 2) // AF_INET
+	copy(raw[offDaddr:], []byte{203, 0, 113, 53})
+	order.PutUint16(raw[offDport:], 53)
+
+	// A DNS query exactly as the sensor forwards it: a 12-byte header (ignored),
+	// the QNAME as length-prefixed labels ending in a zero length, then the
+	// QTYPE/QCLASS the parser must skip.
+	query := make([]byte, 12)
+	for _, label := range []string{"telemetry", "corp", "example"} {
+		query = append(query, byte(len(label)))
+		query = append(query, label...)
+	}
+	query = append(query, 0x00, 0, 1, 0, 1)
+	copy(raw[offDomain:], query)
+
+	event, err := (&Decoder{}).Decode(raw)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if event.Action != "dns" {
+		t.Errorf("action = %q, want dns", event.Action)
+	}
+	if event.Network.Domain != "telemetry.corp.example" {
+		t.Errorf("domain = %q, want telemetry.corp.example", event.Network.Domain)
+	}
+	if event.Network.DstIP != "203.0.113.53" {
+		t.Errorf("dst_ip = %q, want 203.0.113.53", event.Network.DstIP)
+	}
+}
+
+func TestDecodeDNSRejectsMalformedQuery(t *testing.T) {
+	raw := make([]byte, WireSize)
+	binary.NativeEndian.PutUint32(raw[offType:], uint32(model.EventDNS))
+	// A label length of 200 — past the 63-byte DNS maximum (a compression pointer
+	// or junk) — must yield an empty name, never a bogus or out-of-bounds read.
+	raw[offDomain+12] = 200
+	event, err := (&Decoder{}).Decode(raw)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if event.Network.Domain != "" {
+		t.Errorf("domain = %q, want empty for a malformed query", event.Network.Domain)
+	}
+}

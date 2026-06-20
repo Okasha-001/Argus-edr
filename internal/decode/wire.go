@@ -17,9 +17,10 @@ const (
 	commLen     = 16
 	filenameLen = 256
 	argsLen     = 512
+	domainLen   = 256
 
 	// WireSize is sizeof(struct event) — kept in lockstep with bpf/common.h.
-	WireSize = 848
+	WireSize = 1104
 )
 
 // Byte offsets of each field within the wire struct.
@@ -42,6 +43,7 @@ const (
 	offComm      = 64
 	offFilename  = offComm + commLen
 	offArgs      = offFilename + filenameLen
+	offDomain    = offArgs + argsLen
 )
 
 // Decoder converts ring-buffer records to events. BootUnixNano anchors the
@@ -121,7 +123,43 @@ func (d *Decoder) applyTypeSpecific(event *model.Event, raw []byte) {
 		event.Syscall = model.Syscall{Request: int64(mode)} // bpf cmd / mmap prot
 	case model.EventPrivChange:
 		event.Syscall = model.Syscall{NewUID: uint32(event.Ret)}
+	case model.EventDNS:
+		event.Network = model.Network{
+			Family:  order.Uint16(raw[offFamily:]),
+			DstIP:   ipv4(raw[offDaddr : offDaddr+4]),
+			DstPort: order.Uint16(raw[offDport:]),
+			Domain:  parseDNSName(raw[offDomain : offDomain+domainLen]),
+		}
 	}
+}
+
+// parseDNSName extracts the queried name from the raw bytes of a DNS query
+// message the sensor captured. The kernel forwards the message verbatim (sensors
+// are dumb); the agent does the parsing. Layout: a 12-byte header, then QNAME as
+// length-prefixed labels terminated by a zero length. Returns "" if the bytes are
+// too short or malformed, so a junk packet never produces a bogus domain.
+func parseDNSName(query []byte) string {
+	const dnsHeaderLen = 12
+	if len(query) <= dnsHeaderLen {
+		return ""
+	}
+	labels := query[dnsHeaderLen:]
+	var name strings.Builder
+	for offset := 0; offset < len(labels); {
+		length := int(labels[offset])
+		if length == 0 {
+			break // end of QNAME
+		}
+		if length > 63 || offset+1+length > len(labels) {
+			return "" // not a valid label sequence
+		}
+		if name.Len() > 0 {
+			name.WriteByte('.')
+		}
+		name.Write(labels[offset+1 : offset+1+length])
+		offset += 1 + length
+	}
+	return name.String()
 }
 
 func cstr(b []byte) string {

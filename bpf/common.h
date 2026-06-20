@@ -17,6 +17,7 @@
 #define MAX_FILENAME_LEN 256
 #define MAX_ARGS_LEN     512
 #define MAX_ARGV_COUNT   32
+#define MAX_DOMAIN_LEN   256
 
 enum event_type {
     EVENT_EXEC         = 1,
@@ -35,6 +36,7 @@ enum event_type {
     EVENT_MEMFD        = 14, /* memfd_create — fileless staging (T1620)         */
     EVENT_MMAP_EXEC    = 15, /* RWX mmap/mprotect — shellcode (T1055)           */
     EVENT_PRIV_CHANGE  = 16, /* setuid/setgid — privilege change (T1548)        */
+    EVENT_DNS          = 17, /* DNS query (raw query bytes; T1071.004)          */
 };
 
 /*
@@ -67,6 +69,8 @@ struct event {
     char  comm[TASK_COMM_LEN];
     char  filename[MAX_FILENAME_LEN];
     char  args[MAX_ARGS_LEN];       /* NUL-separated argv (exec) or rename dst   */
+    char  domain[MAX_DOMAIN_LEN];   /* raw DNS query bytes (EVENT_DNS); parsed   */
+                                    /* into a name in userspace                  */
 };
 
 #endif /* ARGUS_COMMON_H */

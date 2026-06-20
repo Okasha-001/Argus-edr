@@ -70,9 +70,9 @@ func TestReplayKillChain(t *testing.T) {
 	}
 }
 
-// TestReplaySyscallSensors drives one event per new syscall sensor (ptrace,
-// module load, bpf, memfd, RWX mmap, setuid) through the full pipeline and checks
-// each fires its rule — proving the new event types are wired end to end.
+// TestReplaySyscallSensors drives one event per new Phase-4 sensor (ptrace,
+// module load, bpf, memfd, RWX mmap, setuid, DNS) through the full pipeline and
+// checks each fires its rule — proving the new event types are wired end to end.
 func TestReplaySyscallSensors(t *testing.T) {
 	rules, err := detect.LoadDir("../../rules")
 	if err != nil {
@@ -90,7 +90,7 @@ func TestReplaySyscallSensors(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 
-	for _, want := range []string{"R-0060", "R-0061", "R-0062", "R-0063", "R-0064", "R-0065"} {
+	for _, want := range []string{"R-0060", "R-0061", "R-0062", "R-0063", "R-0064", "R-0065", "R-0066"} {
 		if !slices.Contains(sink.alertRuleIDs, want) {
 			t.Errorf("expected %s to fire; alerts = %v", want, sink.alertRuleIDs)
 		}

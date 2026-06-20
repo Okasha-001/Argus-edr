@@ -70,7 +70,14 @@ static __always_inline struct event *new_event(__u32 type)
     if (!e)
         return NULL;
 
-    __builtin_memset(e, 0, sizeof(*e));
+    // The per-CPU scratch slot is reused between events, so clear stale data
+    // before each use. We zero only up to `domain`: that trailing buffer is
+    // DNS-only and larger than everything before it, so clearing it here too
+    // would (a) push this memset past clang's inline limit (~1 KiB), forcing a
+    // memset libcall the BPF target can't emit, and (b) cost every hot-path
+    // event a needless 256-byte clear. handle_sendto is the only producer of
+    // EVENT_DNS and fills `domain` itself; no other event type reads it.
+    __builtin_memset(e, 0, __builtin_offsetof(struct event, domain));
     e->type = type;
     e->timestamp_ns = bpf_ktime_get_ns();
     e->cgroup_id = bpf_get_current_cgroup_id();
@@ -294,6 +301,9 @@ int BPF_KRETPROBE(handle_inet_accept, struct sock *sk)
 #define PROT_WRITE 0x2
 #define PROT_EXEC  0x4
 
+#define AF_INET  2
+#define DNS_PORT 53
+
 // ptrace into another process is the classic injection primitive (T1055). We
 // forward request and target pid; the agent decides which requests matter.
 SEC("tracepoint/syscalls/sys_enter_ptrace")
@@ -379,6 +389,40 @@ int handle_setuid(struct trace_event_raw_sys_enter *ctx)
         return 0;
 
     e->ret = (__s32)ctx->args[0]; // requested uid
+    emit(e);
+    return 0;
+}
+
+// DNS visibility (T1071.004): libc and most resolvers send the query with
+// sendto(); args[1] is the user buffer holding the DNS message and args[4] the
+// destination sockaddr. We forward the raw query bytes of a port-53 IPv4 send and
+// let the agent parse the queried name — the sensor stays dumb. (UDP path only;
+// sendmsg-based, TCP and IPv6 resolvers are not covered here — see KNOWN_LIMITATIONS.)
+SEC("tracepoint/syscalls/sys_enter_sendto")
+int handle_sendto(struct trace_event_raw_sys_enter *ctx)
+{
+    const void *dest_addr = (const void *)ctx->args[4];
+    if (!dest_addr)
+        return 0;
+
+    struct sockaddr_in dest = {};
+    bpf_probe_read_user(&dest, sizeof(dest), dest_addr);
+    if (dest.sin_family != AF_INET || dest.sin_port != bpf_htons(DNS_PORT))
+        return 0;
+
+    struct event *e = new_event(EVENT_DNS);
+    if (!e)
+        return 0;
+
+    // new_event leaves `domain` uninitialised; require a full read of the query
+    // buffer or drop the event, so a faulted read can never emit a stale name
+    // left in the per-CPU scratch by an earlier query.
+    if (bpf_probe_read_user(&e->domain, sizeof(e->domain), (const void *)ctx->args[1]) != 0)
+        return 0;
+
+    e->family = AF_INET;
+    e->daddr = dest.sin_addr.s_addr;
+    e->dport = DNS_PORT;
     emit(e);
     return 0;
 }
