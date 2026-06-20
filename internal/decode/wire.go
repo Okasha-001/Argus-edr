@@ -18,12 +18,15 @@ const (
 	filenameLen = 256
 	argsLen     = 512
 	domainLen   = 256
+	addrLen     = 16 // saddr/daddr each hold an IPv6 address; IPv4 uses 4 bytes
 
 	// WireSize is sizeof(struct event) — kept in lockstep with bpf/common.h.
-	WireSize = 1104
+	WireSize = 1128
+
+	afINet6 = 10 // AF_INET6; anything else is treated as IPv4
 )
 
-// Byte offsets of each field within the wire struct.
+// Byte offsets of each field within the wire struct (mirror of struct event).
 const (
 	offTimestamp = 0
 	offCgroupID  = 8
@@ -32,15 +35,15 @@ const (
 	offTID       = 24
 	offPPID      = 28
 	offUID       = 32
-	offSaddr     = 40
-	offDaddr     = 44
-	offRet       = 48
-	offArgsLen   = 52
-	offSport     = 56
-	offDport     = 58
-	offFamily    = 60
-	offFmode     = 62
-	offComm      = 64
+	offRet       = 40
+	offArgsLen   = 44
+	offSport     = 48
+	offDport     = 50
+	offFamily    = 52
+	offFmode     = 54
+	offSaddr     = 56
+	offDaddr     = offSaddr + addrLen
+	offComm      = offDaddr + addrLen
 	offFilename  = offComm + commLen
 	offArgs      = offFilename + filenameLen
 	offDomain    = offArgs + argsLen
@@ -107,11 +110,12 @@ func (d *Decoder) applyTypeSpecific(event *model.Event, raw []byte) {
 	case model.EventChmod:
 		event.File = model.File{Path: filename, Mode: mode}
 	case model.EventConnect, model.EventAccept:
+		family := order.Uint16(raw[offFamily:])
 		event.Network = model.Network{
-			Family:  order.Uint16(raw[offFamily:]),
-			SrcIP:   ipv4(raw[offSaddr : offSaddr+4]),
+			Family:  family,
+			SrcIP:   ipAddr(family, raw[offSaddr:offSaddr+addrLen]),
 			SrcPort: order.Uint16(raw[offSport:]),
-			DstIP:   ipv4(raw[offDaddr : offDaddr+4]),
+			DstIP:   ipAddr(family, raw[offDaddr:offDaddr+addrLen]),
 			DstPort: order.Uint16(raw[offDport:]),
 		}
 	case model.EventPtrace:
@@ -193,9 +197,34 @@ func parseArgs(blob []byte, used uint32) []string {
 	return args
 }
 
+// ipAddr formats a wire address field, which is addrLen bytes wide. An AF_INET6
+// event fills all of them; anything else (AF_INET) uses the first four.
+func ipAddr(family uint16, b []byte) string {
+	if family == afINet6 {
+		return ipv6(b)
+	}
+	return ipv4(b[:4])
+}
+
 func ipv4(b []byte) string {
-	if b[0] == 0 && b[1] == 0 && b[2] == 0 && b[3] == 0 {
+	if allZero(b) {
 		return ""
 	}
 	return net.IPv4(b[0], b[1], b[2], b[3]).String()
+}
+
+func ipv6(b []byte) string {
+	if allZero(b) {
+		return ""
+	}
+	return net.IP(b).String()
+}
+
+func allZero(b []byte) bool {
+	for _, c := range b {
+		if c != 0 {
+			return false
+		}
+	}
+	return true
 }

@@ -16,8 +16,9 @@ Stated plainly, because a security tool that hides its gaps is dangerous.
   forwards the raw query bytes from a port-53 `sendto`; the agent parses
   `dns.question.name`), but `sendmsg`-based, TCP and IPv6 resolvers are not yet
   covered, so a resolver using those paths is not seen.
-- **IPv4 only in the wire struct.** The network fields carry IPv4; IPv6 endpoints
-  are not yet represented in `struct event`.
+- **IPv6 for TCP connect/accept only.** `struct event` now carries 16-byte
+  addresses, so `tcp_connect` and `inet_csk_accept` report IPv6 endpoints. The DNS
+  sensor still matches IPv4 port-53 `sendto` only (see the DNS note above).
 - **Syscall sensors are offline-verified, live-load pending.** The ptrace, kernel-
   module, bpf(), memfd_create, RWX-mmap and setuid sensors compile, parse through
   the `cilium/ebpf` loader spec, and round-trip in `wire_test.go`/`make replay`,

@@ -2,6 +2,7 @@ package decode
 
 import (
 	"encoding/binary"
+	"net"
 	"testing"
 
 	"github.com/argus-edr/argus/internal/model"
@@ -63,6 +64,31 @@ func TestDecodeConnectParsesEndpoint(t *testing.T) {
 	}
 	if event.Network.DstPort != 4444 {
 		t.Errorf("dst_port = %d, want 4444", event.Network.DstPort)
+	}
+}
+
+func TestDecodeConnectParsesIPv6(t *testing.T) {
+	raw := make([]byte, WireSize)
+	order := binary.NativeEndian
+	order.PutUint32(raw[offType:], uint32(model.EventConnect))
+	order.PutUint16(raw[offFamily:], afINet6)
+	copy(raw[offSaddr:], net.ParseIP("2001:db8::1").To16())
+	copy(raw[offDaddr:], net.ParseIP("2001:db8::dead:beef").To16())
+	order.PutUint16(raw[offSport:], 40000)
+	order.PutUint16(raw[offDport:], 443)
+
+	event, err := (&Decoder{}).Decode(raw)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if event.Network.SrcIP != "2001:db8::1" {
+		t.Errorf("src_ip = %q, want 2001:db8::1", event.Network.SrcIP)
+	}
+	if event.Network.DstIP != "2001:db8::dead:beef" {
+		t.Errorf("dst_ip = %q, want 2001:db8::dead:beef", event.Network.DstIP)
+	}
+	if event.Network.DstPort != 443 {
+		t.Errorf("dst_port = %d, want 443", event.Network.DstPort)
 	}
 }
 

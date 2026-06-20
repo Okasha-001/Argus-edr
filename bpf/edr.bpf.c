@@ -23,6 +23,9 @@ char LICENSE[] SEC("license") = "GPL";
 #define O_CREAT  0x40
 #define O_TRUNC  0x200
 
+#define AF_INET  2
+#define AF_INET6 10
+
 #define RINGBUF_BYTES (8 * 1024 * 1024)
 
 struct {
@@ -263,11 +266,23 @@ int handle_fchmodat(struct trace_event_raw_sys_enter *ctx)
 
 static __always_inline void fill_socket(struct event *e, struct sock *sk)
 {
-    e->family = BPF_CORE_READ(sk, __sk_common.skc_family);
-    e->saddr = BPF_CORE_READ(sk, __sk_common.skc_rcv_saddr);
-    e->daddr = BPF_CORE_READ(sk, __sk_common.skc_daddr);
+    __u16 family = BPF_CORE_READ(sk, __sk_common.skc_family);
+    e->family = family;
     e->dport = bpf_ntohs(BPF_CORE_READ(sk, __sk_common.skc_dport));
     e->sport = BPF_CORE_READ(sk, __sk_common.skc_num);
+
+    // saddr/daddr hold 16 bytes (IPv6); for IPv4 we write the 4-byte address into
+    // the first word and leave the rest zero (new_event cleared it). skc_addrpair
+    // and skc_v6_* are unions over the same storage, so we pick by family.
+    if (family == AF_INET6) {
+        BPF_CORE_READ_INTO(&e->saddr, sk, __sk_common.skc_v6_rcv_saddr);
+        BPF_CORE_READ_INTO(&e->daddr, sk, __sk_common.skc_v6_daddr);
+    } else {
+        __u32 saddr = BPF_CORE_READ(sk, __sk_common.skc_rcv_saddr);
+        __u32 daddr = BPF_CORE_READ(sk, __sk_common.skc_daddr);
+        __builtin_memcpy(e->saddr, &saddr, sizeof(saddr));
+        __builtin_memcpy(e->daddr, &daddr, sizeof(daddr));
+    }
 }
 
 SEC("kprobe/tcp_connect")
@@ -301,7 +316,6 @@ int BPF_KRETPROBE(handle_inet_accept, struct sock *sk)
 #define PROT_WRITE 0x2
 #define PROT_EXEC  0x4
 
-#define AF_INET  2
 #define DNS_PORT 53
 
 // ptrace into another process is the classic injection primitive (T1055). We
@@ -421,7 +435,7 @@ int handle_sendto(struct trace_event_raw_sys_enter *ctx)
         return 0;
 
     e->family = AF_INET;
-    e->daddr = dest.sin_addr.s_addr;
+    __builtin_memcpy(e->daddr, &dest.sin_addr.s_addr, sizeof(dest.sin_addr.s_addr));
     e->dport = DNS_PORT;
     emit(e);
     return 0;

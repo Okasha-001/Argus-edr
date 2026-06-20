@@ -18,6 +18,7 @@
 #define MAX_ARGS_LEN     512
 #define MAX_ARGV_COUNT   32
 #define MAX_DOMAIN_LEN   256
+#define IP_ADDR_LEN      16  /* holds an IPv6 address; IPv4 uses the first 4 bytes */
 
 enum event_type {
     EVENT_EXEC         = 1,
@@ -58,14 +59,15 @@ struct event {
     __u32 ppid;                     /* parent thread-group id                   */
     __u32 uid;
     __u32 gid;
-    __u32 saddr;                    /* IPv4 source, network byte order          */
-    __u32 daddr;                    /* IPv4 destination, network byte order     */
     __s32 ret;                      /* return/exit code when meaningful         */
     __u32 args_len;                 /* used bytes in args                       */
     __u16 sport;                    /* source port, host byte order             */
     __u16 dport;                    /* destination port, host byte order        */
     __u16 family;                   /* AF_INET / AF_INET6                       */
     __u16 fmode;                    /* open flags / chmod mode (low 16 bits)    */
+    __u8  saddr[IP_ADDR_LEN];       /* source IP, network byte order; IPv4 in   */
+                                    /* the first 4 bytes, rest zero             */
+    __u8  daddr[IP_ADDR_LEN];       /* destination IP, same encoding as saddr   */
     char  comm[TASK_COMM_LEN];
     char  filename[MAX_FILENAME_LEN];
     char  args[MAX_ARGS_LEN];       /* NUL-separated argv (exec) or rename dst   */
