@@ -29,6 +29,8 @@ func dispatch(command string, args []string) error {
 		return runRules(args)
 	case "sigma":
 		return runSigma(args)
+	case "baseline":
+		return runBaseline(args)
 	case "version":
 		fmt.Println(version.String())
 		return nil
@@ -51,6 +53,7 @@ commands:
   replay   run the pipeline over a recorded NDJSON event stream (no root)
   rules    load and list the detection rules
   sigma    convert upstream Sigma rules into the ARGUS rule format
+  baseline build an anomaly baseline from a recorded event stream
   version  print the version
 
 run "argus <command> -h" for a command's flags

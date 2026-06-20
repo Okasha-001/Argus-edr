@@ -49,6 +49,9 @@ func (c Config) validate() error {
 	if c.Intel.Enabled && len(c.Intel.Feeds) == 0 {
 		return fmt.Errorf("intel.feeds is required when intel.enabled is true")
 	}
+	if c.Anomaly.Enabled && c.Anomaly.BaselineFile == "" {
+		return fmt.Errorf("anomaly.baseline_file is required when anomaly.enabled is true")
+	}
 	return nil
 }
 

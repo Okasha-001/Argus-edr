@@ -127,6 +127,11 @@ type Event struct {
 	File      File      `json:"file"`
 	Network   Network   `json:"network"`
 	Container Container `json:"container"`
+
+	// AnomalyScore is a 0–1 rarity/outlier score the anomaly stage assigns in
+	// userspace (0 when scoring is disabled). It is not part of the kernel ABI.
+	// Rules see it as anomaly.score on a 0–100 scale (see fields.go).
+	AnomalyScore float64 `json:"anomaly_score,omitempty"`
 }
 
 // ProcessKey identifies a process across PID reuse by pairing the PID with its

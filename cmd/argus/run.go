@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/argus-edr/argus/internal/anomaly"
 	"github.com/argus-edr/argus/internal/bpfloader"
 	"github.com/argus-edr/argus/internal/config"
 	"github.com/argus-edr/argus/internal/detect"
@@ -61,9 +62,15 @@ func runAgent(args []string) error {
 	}
 	defer sink.Close()
 
+	scorer, err := buildScorer(cfg, logger)
+	if err != nil {
+		return err
+	}
+
 	agent := pipeline.New(pipeline.Params{
 		Source:    buildSource(cfg, logger),
 		Enricher:  enrich.New(enrichOptions(cfg)),
+		Scorer:    scorer,
 		Engine:    engine,
 		Responder: responder,
 		Sink:      sink,
@@ -120,6 +127,20 @@ func startFleet(ctx context.Context, conn *fleetConn, agent *pipeline.Pipeline, 
 		runner.Run(ctx)
 	}()
 	return done
+}
+
+// buildScorer loads the anomaly baseline when anomaly scoring is enabled, or
+// returns a nil scorer (scoring off) otherwise.
+func buildScorer(cfg config.Config, logger *slog.Logger) (pipeline.Scorer, error) {
+	if !cfg.Anomaly.Enabled {
+		return nil, nil
+	}
+	detector, err := anomaly.Load(cfg.Anomaly.BaselineFile)
+	if err != nil {
+		return nil, fmt.Errorf("anomaly: %w", err)
+	}
+	logger.Info("anomaly scoring enabled", "baseline", cfg.Anomaly.BaselineFile)
+	return detector, nil
 }
 
 // buildIntel loads the configured threat-intel feeds, or returns nil when

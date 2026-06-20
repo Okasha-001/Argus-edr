@@ -41,6 +41,43 @@ chain into one finding instead of many. The replay fixture demonstrates both an
 immediate critical incident (reverse shell) and one that opens by accumulation
 (`/tmp` exec + C2 connect by the same process).
 
+## Anomaly scoring (detecting the unknown)
+
+Rules catch what they name. The anomaly stage (`internal/anomaly`) adds a
+probabilistic layer that flags what no rule describes. It runs in userspace
+between enrichment and detection, and is **off by default** — it scores nothing
+unless a trained baseline is loaded.
+
+Two layers produce one score in 0–1, exposed to rules as `anomaly.score` on a
+**0–100** scale:
+
+- **Rarity baselining** — frequency maps over `process.executable`, parent→child,
+  `destination.port`, and user→process. A value rarely seen during training is
+  suspicious; the rarest dimension drives the score (never-seen → ~1.0).
+- **Isolation Forest** — a small ensemble (100 trees × 256-point subsamples) over
+  a per-event numeric vector (name/command lengths, argv count, hour, dest port,
+  uid, path depth, name entropy). Few-and-different points isolate in fewer splits.
+
+Train and use it:
+
+```bash
+argus baseline build --out baseline.json events.ndjson   # learn normal
+argus replay --rules rules --baseline baseline.json suspect.ndjson  # score + detect
+# live: set anomaly.enabled + anomaly.baseline_file in the agent config
+```
+
+A rule then keys on the score (see `rules/50-anomaly.yaml`, R-0050):
+
+```yaml
+match:
+  all:
+    - { field: event.type, op: eq, value: exec }
+    - { field: anomaly.score, op: ge, value: 90 }
+```
+
+With no baseline the score is 0, so anomaly rules stay silent and the hot path
+pays nothing — the safe default.
+
 ## Adding a detection
 
 See the `detection-rules` skill (`.claude/skills/detection-rules`). In short:

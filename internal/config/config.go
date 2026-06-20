@@ -34,6 +34,7 @@ type Config struct {
 	Outputs    []Output   `yaml:"outputs"`
 	Fleet      Fleet      `yaml:"fleet"`
 	Intel      Intel      `yaml:"intel"`
+	Anomaly    Anomaly    `yaml:"anomaly"`
 }
 
 type Agent struct {
@@ -107,6 +108,14 @@ type Fleet struct {
 type Intel struct {
 	Enabled bool     `yaml:"enabled"`
 	Feeds   []string `yaml:"feeds"`
+}
+
+// Anomaly scores events for rarity/outlierness using a baseline trained offline
+// by `argus baseline build`. Off by default; when enabled it loads BaselineFile
+// and exposes anomaly.score (0–100) to rules. No baseline means no scoring.
+type Anomaly struct {
+	Enabled      bool   `yaml:"enabled"`
+	BaselineFile string `yaml:"baseline_file"`
 }
 
 const (

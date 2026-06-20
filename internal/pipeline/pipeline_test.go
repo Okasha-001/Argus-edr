@@ -4,11 +4,14 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/argus-edr/argus/internal/anomaly"
 	"github.com/argus-edr/argus/internal/detect"
 	"github.com/argus-edr/argus/internal/enrich"
 	"github.com/argus-edr/argus/internal/intel"
@@ -64,6 +67,54 @@ func TestReplayKillChain(t *testing.T) {
 	}
 	if got := agent.Stats().Events.Load(); got != 7 {
 		t.Errorf("stats events = %d, want 7", got)
+	}
+}
+
+// TestPipelineAnomalyScoring proves the anomaly stage raises anomaly.score for a
+// process unseen during training and that a rule keyed on the score fires — while
+// a process common in the baseline stays below the threshold.
+func TestPipelineAnomalyScoring(t *testing.T) {
+	trainer := anomaly.NewTrainer()
+	for i := 0; i < 100; i++ {
+		event := &model.Event{Type: model.EventExec, Action: "exec", Timestamp: time.Unix(1000, 0)}
+		event.Process.Name = "bash"
+		event.Process.Executable = "/bin/bash"
+		event.Process.ParentName = "systemd"
+		trainer.Observe(event)
+	}
+	detector := trainer.Build(rand.New(rand.NewSource(1)))
+
+	rules, err := detect.LoadDir("../../rules")
+	if err != nil {
+		t.Fatalf("load rules: %v", err)
+	}
+
+	dir := t.TempDir()
+	eventsPath := filepath.Join(dir, "events.ndjson")
+	// First line is a baseline-common bash exec; second is an executable never
+	// seen in training (and outside /tmp, so only the anomaly rule can fire).
+	events := `{"@timestamp":"2026-06-20T10:00:00Z","host":"web-01","action":"exec","process":{"pid":10,"ppid":1,"name":"bash","executable":"/bin/bash","parent_name":"systemd"}}
+{"@timestamp":"2026-06-20T10:00:01Z","host":"web-01","action":"exec","process":{"pid":11,"ppid":1,"name":"zzrare","executable":"/usr/local/bin/zzrare","parent_name":"systemd"}}
+`
+	if err := os.WriteFile(eventsPath, []byte(events), 0o644); err != nil {
+		t.Fatalf("write events: %v", err)
+	}
+
+	sink := &captureSink{}
+	agent := New(Params{
+		Source:   NewReplaySource(eventsPath),
+		Enricher: enrich.New(enrich.Options{}), // no process tree: keep parent_name from the fixture
+		Scorer:   detector,
+		Engine:   detect.NewEngine(rules, nil),
+		Sink:     sink,
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err := agent.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	if !slices.Contains(sink.alertRuleIDs, "R-0050") {
+		t.Errorf("expected the anomaly rule R-0050 to fire on the rare exec; alerts = %v", sink.alertRuleIDs)
 	}
 }
 

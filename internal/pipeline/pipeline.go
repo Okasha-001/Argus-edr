@@ -21,11 +21,19 @@ type Stats struct {
 	Incidents atomic.Uint64
 }
 
-// Params are the collaborators a Pipeline drives. Enricher and Responder may be
-// nil; Source, Engine, Sink and Logger are required.
+// Scorer assigns an event an anomaly score in [0,1]. The anomaly package's
+// Detector satisfies it; the pipeline depends on the behaviour, not the package,
+// so it never imports the scorer's implementation.
+type Scorer interface {
+	Score(*model.Event) float64
+}
+
+// Params are the collaborators a Pipeline drives. Enricher, Responder and Scorer
+// may be nil; Source, Engine, Sink and Logger are required.
 type Params struct {
 	Source     Source
 	Enricher   *enrich.Enricher
+	Scorer     Scorer
 	Engine     *detect.Engine
 	Responder  *respond.Responder
 	Sink       output.Sink
@@ -96,6 +104,11 @@ func (p *Pipeline) process(event *model.Event) {
 
 	if p.params.Enricher != nil {
 		p.params.Enricher.Enrich(event)
+	}
+	// Anomaly scoring runs after enrichment (so it sees the process tree) and
+	// before detection (so rules can match on anomaly.score).
+	if p.params.Scorer != nil {
+		event.AnomalyScore = p.params.Scorer.Score(event)
 	}
 	result := p.engine.Load().Evaluate(event)
 

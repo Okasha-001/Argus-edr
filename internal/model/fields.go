@@ -40,6 +40,10 @@ var fieldAccessors = map[string]fieldAccessor{
 
 	"container.id":      func(e *Event) (any, bool) { return e.Container.ID, e.Container.ID != "" },
 	"container.runtime": func(e *Event) (any, bool) { return e.Container.Runtime, e.Container.Runtime != "" },
+
+	// anomaly.score is the userspace anomaly stage's 0–1 score exposed to rules on
+	// a 0–100 integer scale, so a rule reads `anomaly.score: {op: ge, value: 90}`.
+	"anomaly.score": func(e *Event) (any, bool) { return int64(e.AnomalyScore*100 + 0.5), true },
 }
 
 // Field resolves a dotted rule path against the event.
