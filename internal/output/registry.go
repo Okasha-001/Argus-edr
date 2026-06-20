@@ -30,6 +30,8 @@ func buildOne(spec config.Output) (Sink, error) {
 		return NewFile(spec.Path, spec.RotateMaxBytes)
 	case "loki":
 		return NewLoki(spec.Endpoint, spec.Labels), nil
+	case "sqlite":
+		return NewSQLite(spec.Path)
 	default:
 		return nil, fmt.Errorf("unknown output type %q", spec.Type)
 	}

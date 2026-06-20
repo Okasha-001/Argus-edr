@@ -147,13 +147,33 @@ func (a *adminAPI) handleAgents(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (a *adminAPI) handleAlerts(w http.ResponseWriter, r *http.Request) {
-	limit := defaultAlertLimit
-	if raw := r.URL.Query().Get("limit"); raw != "" {
+	writeJSON(w, http.StatusOK, a.store.QueryAlerts(alertFilterFromQuery(r)))
+}
+
+// alertFilterFromQuery reads the optional host/severity/technique/since/until/
+// incidents/limit query parameters into a store.AlertFilter. Missing parameters
+// leave the corresponding field zero, which the filter treats as "match all".
+func alertFilterFromQuery(r *http.Request) store.AlertFilter {
+	query := r.URL.Query()
+	filter := store.AlertFilter{
+		Hostname:      query.Get("host"),
+		Severity:      query.Get("severity"),
+		TechniqueID:   query.Get("technique"),
+		IncidentsOnly: query.Get("incidents") == "true",
+		Limit:         defaultAlertLimit,
+	}
+	if raw := query.Get("limit"); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-			limit = parsed
+			filter.Limit = parsed
 		}
 	}
-	writeJSON(w, http.StatusOK, a.store.RecentAlerts(limit))
+	if since, err := time.Parse(time.RFC3339, query.Get("since")); err == nil {
+		filter.Since = since
+	}
+	if until, err := time.Parse(time.RFC3339, query.Get("until")); err == nil {
+		filter.Until = until
+	}
+	return filter
 }
 
 func (a *adminAPI) handleSignals(w http.ResponseWriter, _ *http.Request) {

@@ -77,6 +77,9 @@ func (m *Memory) List() []Agent {
 }
 
 func (m *Memory) RecordAlert(record AlertRecord) {
+	if record.ID == "" {
+		record.ID = NewID()
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.alerts = append(m.alerts, record)
@@ -87,17 +90,57 @@ func (m *Memory) RecordAlert(record AlertRecord) {
 
 // RecentAlerts returns up to limit alerts, most recent first.
 func (m *Memory) RecentAlerts(limit int) []AlertRecord {
+	return m.QueryAlerts(AlertFilter{Limit: limit})
+}
+
+// QueryAlerts returns the alerts matching filter, most recent first.
+func (m *Memory) QueryAlerts(filter AlertFilter) []AlertRecord {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if limit <= 0 || limit > len(m.alerts) {
-		limit = len(m.alerts)
-	}
-	out := make([]AlertRecord, 0, limit)
-	for i := len(m.alerts) - 1; i >= 0 && len(out) < limit; i-- {
-		out = append(out, m.alerts[i])
+	out := make([]AlertRecord, 0, len(m.alerts))
+	for i := len(m.alerts) - 1; i >= 0; i-- {
+		if filter.Limit > 0 && len(out) >= filter.Limit {
+			break
+		}
+		if filter.matches(m.alerts[i]) {
+			out = append(out, m.alerts[i])
+		}
 	}
 	return out
 }
+
+// AlertByID returns the stored alert with the given id.
+func (m *Memory) AlertByID(id string) (AlertRecord, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for i := len(m.alerts) - 1; i >= 0; i-- {
+		if m.alerts[i].ID == id {
+			return m.alerts[i], true
+		}
+	}
+	return AlertRecord{}, false
+}
+
+// PruneAlerts drops every alert recorded strictly before the cutoff and returns
+// how many were removed.
+func (m *Memory) PruneAlerts(before time.Time) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	kept := m.alerts[:0:0]
+	removed := 0
+	for _, alert := range m.alerts {
+		if alert.Time.Before(before) {
+			removed++
+			continue
+		}
+		kept = append(kept, alert)
+	}
+	m.alerts = kept
+	return removed
+}
+
+// Close releases resources held by the store. The in-memory store holds none.
+func (m *Memory) Close() error { return nil }
 
 func (m *Memory) EnqueueCommand(agentID string, cmd Command) bool {
 	m.mu.Lock()

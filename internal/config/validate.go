@@ -6,7 +6,7 @@ var (
 	validLogLevels = map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
 	validSources   = map[string]bool{SourceEBPF: true, SourceReplay: true}
 	validModes     = map[string]bool{ModeOff: true, ModeDryRun: true, ModeEnforce: true}
-	validOutputs   = map[string]bool{"stdout": true, "file": true, "loki": true}
+	validOutputs   = map[string]bool{"stdout": true, "file": true, "loki": true, "sqlite": true}
 
 	// modeRank orders the response postures so config can enforce mode <= max_mode.
 	modeRank = map[string]int{ModeOff: 0, ModeDryRun: 1, ModeEnforce: 2}
@@ -81,10 +81,13 @@ func (c Config) validateFleet() error {
 func (c Config) validateOutputs() error {
 	for i, out := range c.Outputs {
 		if !validOutputs[out.Type] {
-			return fmt.Errorf("outputs[%d].type %q invalid (want stdout|file|loki)", i, out.Type)
+			return fmt.Errorf("outputs[%d].type %q invalid (want stdout|file|loki|sqlite)", i, out.Type)
 		}
 		if out.Type == "file" && out.Path == "" {
 			return fmt.Errorf("outputs[%d] (file) requires a path", i)
+		}
+		if out.Type == "sqlite" && out.Path == "" {
+			return fmt.Errorf("outputs[%d] (sqlite) requires a path", i)
 		}
 		if out.Type == "loki" && out.Endpoint == "" {
 			return fmt.Errorf("outputs[%d] (loki) requires an endpoint", i)

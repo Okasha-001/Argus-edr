@@ -40,6 +40,8 @@ func runServe(args []string) error {
 	dnsName := flags.String("dns", "argus-server", "server certificate DNS name when generating dev certs")
 	token := flags.String("token", os.Getenv("ARGUS_ENROLLMENT_TOKEN"), "required enrollment token (empty = open enrollment)")
 	adminToken := flags.String("admin-token", os.Getenv("ARGUS_ADMIN_TOKEN"), "bearer token for admin command/reload endpoints (empty = those endpoints are refused)")
+	storeKind := flags.String("store", store.BackendMemory, "state backend: memory (ephemeral) or sqlite (durable)")
+	dsn := flags.String("dsn", "", "data source for --store sqlite (database file path)")
 	ttl := flags.Duration("heartbeat-ttl", 90*time.Second, "treat an agent offline after this long without a heartbeat")
 	window := flags.Duration("correlate-window", 5*time.Minute, "cross-host correlation window")
 	minHosts := flags.Int("correlate-min-hosts", 3, "distinct hosts before a cross-host signal fires")
@@ -62,9 +64,15 @@ func runServe(args []string) error {
 		return err
 	}
 
-	memStore := store.NewMemory()
+	backing, err := store.Open(*storeKind, *dsn)
+	if err != nil {
+		return err
+	}
+	defer backing.Close()
+	logger.Info("state backend", "store", *storeKind)
+
 	correlator := correlate.NewCrossHost(*window, *minHosts)
-	admin := newAdminAPI(memStore, rules, *ttl, *adminToken, logger)
+	admin := newAdminAPI(backing, rules, *ttl, *adminToken, logger)
 	reloadOnHangup(rules, logger)
 	if *token == "" {
 		logger.Warn("open enrollment: no --token set, any agent with a valid client certificate can enroll")
@@ -74,7 +82,7 @@ func runServe(args []string) error {
 	}
 
 	service := api.New(api.Deps{
-		Store:      memStore,
+		Store:      backing,
 		Rules:      rules,
 		Correlator: correlator,
 		Token:      *token,

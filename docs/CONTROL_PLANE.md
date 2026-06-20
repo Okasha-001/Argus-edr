@@ -118,7 +118,7 @@ Binds to `127.0.0.1:8080` by default (not mutually authenticated — keep local)
 |---------------|---------|
 | `GET /healthz`, `GET /version` | Liveness / version. |
 | `GET /api/agents` | Enrolled agents + `online` flag. |
-| `GET /api/alerts?limit=N` | Recent alerts, newest first. |
+| `GET /api/alerts?…` | Alert history, newest first. Optional filters: `host`, `severity`, `technique`, `since`/`until` (RFC3339), `incidents=true`, `limit=N`. |
 | `GET /api/signals` | Recent cross-host signals. |
 | `POST /api/agents/{id}/commands` | Queue a command `{"kind":…,"argument":…}`. |
 | `POST /api/rules/reload` | Re-read `--rules`, bump version (agents converge next heartbeat). |
@@ -130,9 +130,34 @@ Binds to `127.0.0.1:8080` by default (not mutually authenticated — keep local)
 ```
 argus-server serve      --grpc :8443 --http 127.0.0.1:8080 --rules ./rules \
                         --ca … --cert … --key …   (or --dev)  --token <secret>
+                        --store memory|sqlite --dsn /var/lib/argus/fleet.db \
                         --correlate-window 5m --correlate-min-hosts 3 --heartbeat-ttl 90s
 argus-server gen-certs  --dir ./fleet-certs --dns argus-server
 argus run               # agent; fleet activated by the config's fleet.enabled
+```
+
+### 8.1 Persistent storage (`--store`)
+
+The control plane's state backend implements `server/store.Store`. Two backends ship:
+
+| `--store` | Behaviour |
+|-----------|-----------|
+| `memory` (default) | In-process; fast; **lost on restart**. Good for a single node or tests. |
+| `sqlite` | Durable, on-disk (`--dsn <path>`), cgo-free (`modernc.org/sqlite`). Agents, alert history and command queues **survive a restart**. |
+
+Postgres is the documented next backend: it implements the same `Store` interface
+(`Enroll/Heartbeat/Get/List/RecordAlert/QueryAlerts/AlertByID/PruneAlerts/…`), so
+adding it touches no API code. Both shipping backends pass one shared conformance
+suite (`server/store/conformance_test.go`). Retention is `Store.PruneAlerts(before)`.
+
+A host can also keep a **local event store** independent of the fleet: add a
+`sqlite` output to the agent config. Every event/alert/incident is written as an
+ECS JSON row for after-the-fact local investigation:
+
+```yaml
+outputs:
+  - type: sqlite
+    path: /var/lib/argus/events.db
 ```
 
 ## 9. Agent configuration (`fleet:` block, off by default)

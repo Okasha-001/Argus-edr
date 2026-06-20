@@ -6,8 +6,32 @@ package store
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"time"
 )
+
+// Backend names accepted by Open.
+const (
+	BackendMemory = "memory"
+	BackendSQLite = "sqlite"
+)
+
+// Open returns a Store of the named kind. "memory" is ephemeral (lost on
+// restart); "sqlite" is durable and takes a filesystem path as its dsn.
+// Postgres is the documented next backend — it implements the same interface.
+func Open(kind, dsn string) (Store, error) {
+	switch kind {
+	case BackendMemory, "":
+		return NewMemory(), nil
+	case BackendSQLite:
+		if dsn == "" {
+			return nil, fmt.Errorf("store %q requires a --dsn (database file path)", kind)
+		}
+		return openSQLite(dsn)
+	default:
+		return nil, fmt.Errorf("unknown store %q (want memory|sqlite)", kind)
+	}
+}
 
 // Agent is one enrolled host as the control plane knows it.
 type Agent struct {
@@ -44,6 +68,9 @@ type Stats struct {
 // AlertRecord is a flattened alert as received from an agent — enough for
 // central display and cross-host correlation.
 type AlertRecord struct {
+	// ID uniquely identifies a stored alert. RecordAlert assigns one when it is
+	// empty, so callers may leave it blank and read it back via AlertByID.
+	ID                string
 	AgentID           string
 	Hostname          string
 	Time              time.Time
@@ -66,7 +93,22 @@ type Command struct {
 	Argument string
 }
 
-// Store is the control plane's state backend.
+// AlertFilter narrows a history query. A zero value matches everything; each set
+// field is an additional AND constraint. Time bounds are inclusive; the zero
+// time means "unbounded" on that side.
+type AlertFilter struct {
+	Hostname      string
+	Severity      string
+	TechniqueID   string
+	Since         time.Time
+	Until         time.Time
+	IncidentsOnly bool
+	Limit         int // <= 0 means no limit
+}
+
+// Store is the control plane's state backend. Implementations must be safe for
+// concurrent use. The history methods (QueryAlerts, AlertByID, PruneAlerts) and
+// Close exist so a durable backend can outlive a restart and serve the console.
 type Store interface {
 	Enroll(hostname, version, kernel, certFingerprint string) Agent
 	Heartbeat(agentID string, stats Stats) (Agent, bool)
@@ -74,8 +116,36 @@ type Store interface {
 	List() []Agent
 	RecordAlert(record AlertRecord)
 	RecentAlerts(limit int) []AlertRecord
+	QueryAlerts(filter AlertFilter) []AlertRecord
+	AlertByID(id string) (AlertRecord, bool)
+	PruneAlerts(before time.Time) int
 	EnqueueCommand(agentID string, cmd Command) bool
 	DrainCommands(agentID string) []Command
+	Close() error
+}
+
+// matches reports whether record satisfies every set constraint in the filter.
+// It is shared by the in-memory backend and any backend that filters in Go.
+func (f AlertFilter) matches(record AlertRecord) bool {
+	if f.Hostname != "" && record.Hostname != f.Hostname {
+		return false
+	}
+	if f.Severity != "" && record.Severity != f.Severity {
+		return false
+	}
+	if f.TechniqueID != "" && record.TechniqueID != f.TechniqueID {
+		return false
+	}
+	if f.IncidentsOnly && !record.IsIncident {
+		return false
+	}
+	if !f.Since.IsZero() && record.Time.Before(f.Since) {
+		return false
+	}
+	if !f.Until.IsZero() && record.Time.After(f.Until) {
+		return false
+	}
+	return true
 }
 
 // NewID returns a random 128-bit hex identifier for a freshly enrolled agent.

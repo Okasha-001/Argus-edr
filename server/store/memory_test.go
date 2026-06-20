@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+func TestMemoryConformance(t *testing.T) {
+	runStoreConformance(t, func(t *testing.T) Store { return NewMemory() })
+}
+
 func TestEnrollAndGet(t *testing.T) {
 	store := NewMemory()
 	agent := store.Enroll("web-01", "1.0", "6.8.0", "fp-web-01")
