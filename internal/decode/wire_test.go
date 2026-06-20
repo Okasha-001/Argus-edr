@@ -66,6 +66,57 @@ func TestDecodeConnectParsesEndpoint(t *testing.T) {
 	}
 }
 
+func TestDecodePtraceReusesFmodeAndRet(t *testing.T) {
+	raw := make([]byte, WireSize)
+	order := binary.NativeEndian
+	order.PutUint32(raw[offType:], uint32(model.EventPtrace))
+	order.PutUint16(raw[offFmode:], 16) // PTRACE_ATTACH
+	order.PutUint32(raw[offRet:], 4242) // target pid
+	order.PutUint32(raw[offPID:], 900)  // tracer pid
+
+	event, err := (&Decoder{}).Decode(raw)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if event.Action != "ptrace" {
+		t.Errorf("action = %q, want ptrace", event.Action)
+	}
+	if event.Syscall.Request != 16 {
+		t.Errorf("syscall.request = %d, want 16 (PTRACE_ATTACH)", event.Syscall.Request)
+	}
+	if event.Syscall.TargetPID != 4242 {
+		t.Errorf("syscall.target_pid = %d, want 4242", event.Syscall.TargetPID)
+	}
+}
+
+func TestDecodeModuleLoadCarriesName(t *testing.T) {
+	raw := make([]byte, WireSize)
+	binary.NativeEndian.PutUint32(raw[offType:], uint32(model.EventKmod))
+	copy(raw[offFilename:], "evil_rootkit\x00")
+
+	event, err := (&Decoder{}).Decode(raw)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if event.Action != "module_load" || event.File.Path != "evil_rootkit" {
+		t.Errorf("module load decode = %q path=%q, want module_load/evil_rootkit", event.Action, event.File.Path)
+	}
+}
+
+func TestDecodeSetuidCarriesNewUID(t *testing.T) {
+	raw := make([]byte, WireSize)
+	binary.NativeEndian.PutUint32(raw[offType:], uint32(model.EventPrivChange))
+	binary.NativeEndian.PutUint32(raw[offRet:], 0) // setuid(0)
+
+	event, err := (&Decoder{}).Decode(raw)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if event.Action != "setuid" || event.Syscall.NewUID != 0 {
+		t.Errorf("setuid decode = %q new_uid=%d", event.Action, event.Syscall.NewUID)
+	}
+}
+
 func TestDecodeOpenIsNotMisreadAsNetwork(t *testing.T) {
 	raw := make([]byte, WireSize)
 	binary.NativeEndian.PutUint32(raw[offType:], uint32(model.EventOpen))

@@ -16,6 +16,12 @@ Stated plainly, because a security tool that hides its gaps is dangerous.
   not yet extracted, so domain rules are not shipped.
 - **IPv4 only in the wire struct.** The network fields carry IPv4; IPv6 endpoints
   are not yet represented in `struct event`.
+- **Syscall sensors are offline-verified, live-load pending.** The ptrace, kernel-
+  module, bpf(), memfd_create, RWX-mmap and setuid sensors compile, parse through
+  the `cilium/ebpf` loader spec, and round-trip in `wire_test.go`/`make replay`,
+  but loading them through the **kernel verifier** needs a root host with BTF and
+  has not been exercised here (no privileged host in the build environment). Run
+  `make all && sudo ./build/bin/argus run` on a snapshotted VM to confirm live.
 
 ## Correlation and process identity
 

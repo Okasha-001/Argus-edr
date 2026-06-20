@@ -289,3 +289,96 @@ int BPF_KRETPROBE(handle_inet_accept, struct sock *sk)
     emit(e);
     return 0;
 }
+
+// Memory protection bits we treat as suspicious when set together (RWX).
+#define PROT_WRITE 0x2
+#define PROT_EXEC  0x4
+
+// ptrace into another process is the classic injection primitive (T1055). We
+// forward request and target pid; the agent decides which requests matter.
+SEC("tracepoint/syscalls/sys_enter_ptrace")
+int handle_ptrace(struct trace_event_raw_sys_enter *ctx)
+{
+    struct event *e = new_event(EVENT_PTRACE);
+    if (!e)
+        return 0;
+
+    e->fmode = (__u16)ctx->args[0]; // request
+    e->ret = (__s32)ctx->args[1];   // target pid
+    emit(e);
+    return 0;
+}
+
+// Loading a kernel module is how rootkits enter the kernel (T1547.006/T1014).
+SEC("kprobe/do_init_module")
+int BPF_KPROBE(handle_init_module, struct module *mod)
+{
+    struct event *e = new_event(EVENT_KMOD);
+    if (!e)
+        return 0;
+
+    BPF_CORE_READ_STR_INTO(&e->filename, mod, name);
+    emit(e);
+    return 0;
+}
+
+// The bpf() syscall itself can be abused (malicious eBPF, map tampering); the
+// agent flags unexpected callers (T1059).
+SEC("tracepoint/syscalls/sys_enter_bpf")
+int handle_bpf(struct trace_event_raw_sys_enter *ctx)
+{
+    struct event *e = new_event(EVENT_BPF);
+    if (!e)
+        return 0;
+
+    e->fmode = (__u16)ctx->args[0]; // bpf command
+    emit(e);
+    return 0;
+}
+
+// memfd_create backs fileless execution: a payload lives only in an anonymous
+// fd, then is exec'd with no path on disk (T1620).
+SEC("tracepoint/syscalls/sys_enter_memfd_create")
+int handle_memfd(struct trace_event_raw_sys_enter *ctx)
+{
+    struct event *e = new_event(EVENT_MEMFD);
+    if (!e)
+        return 0;
+
+    bpf_probe_read_user_str(&e->filename, sizeof(e->filename),
+                            (const char *)ctx->args[0]);
+    e->fmode = (__u16)ctx->args[1]; // flags
+    emit(e);
+    return 0;
+}
+
+// A writable+executable mapping is the hallmark of shellcode staging (T1055).
+// We only forward the RWX case to keep the firehose down.
+SEC("kprobe/security_mmap_file")
+int BPF_KPROBE(handle_mmap_file, struct file *file, unsigned long prot)
+{
+    if (!((prot & PROT_WRITE) && (prot & PROT_EXEC)))
+        return 0;
+
+    struct event *e = new_event(EVENT_MMAP_EXEC);
+    if (!e)
+        return 0;
+
+    e->fmode = (__u16)prot;
+    emit(e);
+    return 0;
+}
+
+// setuid is a privilege transition; setuid(0) from a non-root context is a
+// red flag for local privilege escalation (T1548).
+SEC("tracepoint/syscalls/sys_enter_setuid")
+int handle_setuid(struct trace_event_raw_sys_enter *ctx)
+{
+    struct event *e = new_event(EVENT_PRIV_CHANGE);
+    if (!e)
+        return 0;
+
+    e->ret = (__s32)ctx->args[0]; // requested uid
+    emit(e);
+    return 0;
+}

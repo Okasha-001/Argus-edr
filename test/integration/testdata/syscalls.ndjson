@@ -1,0 +1,6 @@
+{"@timestamp":"2026-06-20T12:00:00Z","host":"web-01","action":"ptrace","process":{"pid":700,"ppid":1,"name":"injector"},"syscall":{"request":16,"target_pid":701}}
+{"@timestamp":"2026-06-20T12:00:01Z","host":"web-01","action":"module_load","process":{"pid":702,"ppid":1,"name":"insmod"},"file":{"path":"evil_rootkit"}}
+{"@timestamp":"2026-06-20T12:00:02Z","host":"web-01","action":"bpf","process":{"pid":703,"ppid":1,"name":"loader"},"syscall":{"request":5}}
+{"@timestamp":"2026-06-20T12:00:03Z","host":"web-01","action":"memfd_create","process":{"pid":704,"ppid":1,"name":"dropper"},"file":{"path":"payload"}}
+{"@timestamp":"2026-06-20T12:00:04Z","host":"web-01","action":"mmap_exec","process":{"pid":705,"ppid":1,"name":"shellcode"},"syscall":{"request":6}}
+{"@timestamp":"2026-06-20T12:00:05Z","host":"web-01","action":"setuid","process":{"pid":706,"ppid":1,"name":"sudo-clone"},"syscall":{"new_uid":0}}

@@ -112,6 +112,15 @@ func (d *Decoder) applyTypeSpecific(event *model.Event, raw []byte) {
 			DstIP:   ipv4(raw[offDaddr : offDaddr+4]),
 			DstPort: order.Uint16(raw[offDport:]),
 		}
+	case model.EventPtrace:
+		// fmode = request, ret = target pid (see bpf/common.h).
+		event.Syscall = model.Syscall{Request: int64(mode), TargetPID: uint32(event.Ret)}
+	case model.EventKmod, model.EventMemfd:
+		event.File = model.File{Path: filename} // module name / memfd name
+	case model.EventBPF, model.EventMmapExec:
+		event.Syscall = model.Syscall{Request: int64(mode)} // bpf cmd / mmap prot
+	case model.EventPrivChange:
+		event.Syscall = model.Syscall{NewUID: uint32(event.Ret)}
 	}
 }
 

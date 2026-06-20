@@ -70,6 +70,33 @@ func TestReplayKillChain(t *testing.T) {
 	}
 }
 
+// TestReplaySyscallSensors drives one event per new syscall sensor (ptrace,
+// module load, bpf, memfd, RWX mmap, setuid) through the full pipeline and checks
+// each fires its rule — proving the new event types are wired end to end.
+func TestReplaySyscallSensors(t *testing.T) {
+	rules, err := detect.LoadDir("../../rules")
+	if err != nil {
+		t.Fatalf("load rules: %v", err)
+	}
+	sink := &captureSink{}
+	agent := New(Params{
+		Source:   NewReplaySource("../../test/integration/testdata/syscalls.ndjson"),
+		Enricher: enrich.New(enrich.Options{}),
+		Engine:   detect.NewEngine(rules, nil),
+		Sink:     sink,
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err := agent.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	for _, want := range []string{"R-0060", "R-0061", "R-0062", "R-0063", "R-0064", "R-0065"} {
+		if !slices.Contains(sink.alertRuleIDs, want) {
+			t.Errorf("expected %s to fire; alerts = %v", want, sink.alertRuleIDs)
+		}
+	}
+}
+
 // TestPipelineAnomalyScoring proves the anomaly stage raises anomaly.score for a
 // process unseen during training and that a rule keyed on the score fires — while
 // a process common in the baseline stays below the threshold.

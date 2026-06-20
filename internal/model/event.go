@@ -22,6 +22,12 @@ const (
 	EventConnect     EventType = 8
 	EventAccept      EventType = 9
 	EventExecBlocked EventType = 10
+	EventPtrace      EventType = 11
+	EventKmod        EventType = 12
+	EventBPF         EventType = 13
+	EventMemfd       EventType = 14
+	EventMmapExec    EventType = 15
+	EventPrivChange  EventType = 16
 )
 
 var eventActions = map[EventType]string{
@@ -35,6 +41,12 @@ var eventActions = map[EventType]string{
 	EventConnect:     "connect",
 	EventAccept:      "accept",
 	EventExecBlocked: "exec_blocked",
+	EventPtrace:      "ptrace",
+	EventKmod:        "module_load",
+	EventBPF:         "bpf",
+	EventMemfd:       "memfd_create",
+	EventMmapExec:    "mmap_exec",
+	EventPrivChange:  "setuid",
 }
 
 var actionTypes = func() map[string]EventType {
@@ -103,6 +115,15 @@ type User struct {
 	Name string `json:"name,omitempty"`
 }
 
+// Syscall carries details specific to the syscall sensors (ptrace, bpf, memfd,
+// mmap, privilege changes). It is populated per event type and lives only in
+// userspace — the kernel forwards the raw numbers in reused wire fields.
+type Syscall struct {
+	Request   int64  `json:"request,omitempty"`    // ptrace request / bpf cmd / mmap prot
+	TargetPID uint32 `json:"target_pid,omitempty"` // ptrace target process
+	NewUID    uint32 `json:"new_uid,omitempty"`    // setuid/setgid requested id
+}
+
 // Container identifies the cgroup/container an event came from, if any.
 type Container struct {
 	ID      string `json:"id,omitempty"`
@@ -127,6 +148,7 @@ type Event struct {
 	File      File      `json:"file"`
 	Network   Network   `json:"network"`
 	Container Container `json:"container"`
+	Syscall   Syscall   `json:"syscall"`
 
 	// AnomalyScore is a 0–1 rarity/outlier score the anomaly stage assigns in
 	// userspace (0 when scoring is disabled). It is not part of the kernel ABI.

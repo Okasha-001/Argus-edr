@@ -29,7 +29,23 @@ enum event_type {
     EVENT_CONNECT      = 8,
     EVENT_ACCEPT       = 9,
     EVENT_EXEC_BLOCKED = 10, /* emitted by the LSM enforcement object */
+    EVENT_PTRACE       = 11, /* ptrace() — process injection (T1055)            */
+    EVENT_KMOD         = 12, /* kernel module load — rootkit (T1547.006/T1014)  */
+    EVENT_BPF          = 13, /* bpf() syscall (T1059)                           */
+    EVENT_MEMFD        = 14, /* memfd_create — fileless staging (T1620)         */
+    EVENT_MMAP_EXEC    = 15, /* RWX mmap/mprotect — shellcode (T1055)           */
+    EVENT_PRIV_CHANGE  = 16, /* setuid/setgid — privilege change (T1548)        */
 };
+
+/*
+ * Field reuse for the syscall sensors above (no layout change):
+ *   ptrace      : fmode = request,    ret = target pid
+ *   kmod        : filename = module name
+ *   bpf         : fmode = bpf command
+ *   memfd       : filename = memfd name, fmode = flags
+ *   mmap_exec   : fmode = prot flags
+ *   priv_change : ret = requested uid
+ */
 
 struct event {
     __u64 timestamp_ns;             /* bpf_ktime_get_ns(), monotonic since boot */
