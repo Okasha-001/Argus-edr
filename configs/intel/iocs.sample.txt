@@ -1,0 +1,26 @@
+# ARGUS threat-intelligence feed (sample).
+#
+# One indicator per line. The type is inferred:
+#   - a CIDR        (contains '/')        e.g. 203.0.113.0/24
+#   - an IP         (v4 or v6)            e.g. 203.0.113.66
+#   - a SHA-256     (64 hex characters)   e.g. e3b0c4...855
+#   - otherwise a domain                  e.g. malware.example
+# Blank lines and '#' comments (whole-line or trailing) are ignored.
+#
+# The addresses below are documentation/test ranges (RFC 5737 / RFC 3849) and the
+# domains are reserved example names (RFC 2606) — replace them with a real feed.
+
+# --- Malicious IPs / ranges ---
+203.0.113.66            # known C2 node
+198.51.100.7
+203.0.113.0/24          # bulletproof hosting block
+2001:db8:dead:beef::1   # IPv6 C2
+
+# --- Malicious domains ---
+c2.malware.example
+payload.evil.example
+exfil.example.test
+
+# --- Malicious file hashes (SHA-256) ---
+44d88612fea8a8f36de82e1278abb02f0000000000000000000000000000dead
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855

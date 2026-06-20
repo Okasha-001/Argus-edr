@@ -1,0 +1,62 @@
+# Persistence detections.
+
+- id: R-0003
+  name: Persistence via cron
+  description: A cron schedule was created or modified, a common way to survive reboots.
+  severity: high
+  risk_score: 45
+  technique:
+    id: T1053.003
+    name: "Scheduled Task/Job: Cron"
+    tactic: persistence
+  match:
+    all:
+      - { field: event.type, op: in, value: [open, rename] }
+      - any:
+          - { field: file.path, op: startswith, value: "/etc/cron" }
+          - { field: file.path, op: startswith, value: "/var/spool/cron" }
+
+- id: R-0004
+  name: Persistence via systemd unit
+  description: A systemd unit file was created or modified, installing a persistent service.
+  severity: high
+  risk_score: 45
+  technique:
+    id: T1543.002
+    name: "Create or Modify System Process: systemd Service"
+    tactic: persistence
+  match:
+    all:
+      - { field: event.type, op: in, value: [open, rename] }
+      - any:
+          - { field: file.path, op: startswith, value: "/etc/systemd/system/" }
+          - { field: file.path, op: startswith, value: "/lib/systemd/system/" }
+          - { field: file.path, op: startswith, value: "/usr/lib/systemd/system/" }
+
+- id: R-0005
+  name: SSH authorized_keys modified
+  description: An SSH authorized_keys file was written, a classic backdoor for persistent access.
+  severity: high
+  risk_score: 50
+  technique:
+    id: T1098.004
+    name: "Account Manipulation: SSH Authorized Keys"
+    tactic: persistence
+  match:
+    all:
+      - { field: event.type, op: in, value: [open, rename] }
+      - { field: file.path, op: endswith, value: "authorized_keys" }
+
+- id: R-0006
+  name: Dynamic linker hijack via ld.so.preload
+  description: /etc/ld.so.preload was written, forcing a library into every dynamically linked process.
+  severity: critical
+  risk_score: 70
+  technique:
+    id: T1574.006
+    name: "Hijack Execution Flow: Dynamic Linker Hijacking"
+    tactic: persistence
+  match:
+    all:
+      - { field: event.type, op: in, value: [open, rename, chmod] }
+      - { field: file.path, op: eq, value: "/etc/ld.so.preload" }

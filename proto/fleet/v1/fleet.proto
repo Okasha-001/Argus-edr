@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+// FleetService is the agent <-> control-plane API. It runs over mTLS: both ends
+// present certificates signed by the fleet CA, so an agent's identity is its
+// client certificate.
+package fleet.v1;
+
+option go_package = "github.com/argus-edr/argus/internal/fleet/fleetpb;fleetpb";
+
+import "google/protobuf/timestamp.proto";
+
+service FleetService {
+  // Enroll registers an agent and returns its assigned id and the current rules
+  // version. Called once at startup.
+  rpc Enroll(EnrollRequest) returns (EnrollResponse);
+
+  // Heartbeat reports liveness and counters; the response carries any commands
+  // the control plane has queued for this agent (rule update, response action).
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+  // ReportAlerts streams alerts and incidents from the agent to the server.
+  rpc ReportAlerts(stream AlertReport) returns (ReportAck);
+
+  // GetRules returns the fleet ruleset, or signals that the agent's version is
+  // already current.
+  rpc GetRules(RulesRequest) returns (RulesResponse);
+}
+
+message EnrollRequest {
+  string hostname = 1;
+  string agent_version = 2;
+  string kernel = 3;
+  string enrollment_token = 4;
+}
+
+message EnrollResponse {
+  string agent_id = 1;
+  string rules_version = 2;
+}
+
+message HeartbeatRequest {
+  string agent_id = 1;
+  uint64 events_processed = 2;
+  uint64 alerts = 3;
+  uint64 incidents = 4;
+  string rules_version = 5;
+}
+
+message Command {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    UPDATE_RULES = 1;
+    SET_RESPONSE_MODE = 2;
+    KILL_PROCESS = 3;
+    QUARANTINE = 4;
+  }
+  Kind kind = 1;
+  string argument = 2; // mode name, pid, ... interpreted per kind
+}
+
+message HeartbeatResponse {
+  repeated Command commands = 1;
+}
+
+message AlertReport {
+  string agent_id = 1;
+  string hostname = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  string rule_id = 4;
+  string rule_name = 5;
+  string severity = 6;
+  string technique_id = 7;
+  string technique_name = 8;
+  uint32 pid = 9;
+  string process_name = 10;
+  string process_executable = 11;
+  string destination_ip = 12;
+  int32 risk_score = 13;
+  bool is_incident = 14;
+}
+
+message ReportAck {
+  uint64 received = 1;
+}
+
+message RulesRequest {
+  string agent_id = 1;
+  string known_version = 2;
+}
+
+message RulesResponse {
+  string version = 1;
+  bool unchanged = 2;
+  repeated RuleFile files = 3;
+}
+
+message RuleFile {
+  string name = 1;
+  bytes content = 2;
+}

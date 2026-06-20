@@ -1,0 +1,28 @@
+title: Netcat Reverse Shell Execution
+id: 9b1d6f44-0c0a-4f3a-9b21-0a1e2f3c4d5e
+status: experimental
+description: Detects execution of netcat configured to spawn an interactive shell, a common reverse-shell technique.
+references:
+  - https://attack.mitre.org/techniques/T1059/004/
+author: ARGUS
+date: 2026/06/20
+tags:
+  - attack.execution
+  - attack.t1059.004
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    Image|endswith:
+      - /nc
+      - /ncat
+  shell:
+    CommandLine|contains:
+      - -e /bin/sh
+      - -e /bin/bash
+      - -c /bin/sh
+  condition: selection and shell
+falsepositives:
+  - Administrative use of netcat with an explicit command
+level: high

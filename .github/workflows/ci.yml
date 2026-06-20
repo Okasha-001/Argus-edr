@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+      - run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+  bpf:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install eBPF toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm libbpf-dev
+          sudo apt-get install -y "linux-tools-$(uname -r)" || sudo apt-get install -y linux-tools-generic || true
+      - name: Generate vmlinux.h from kernel BTF
+        run: ./scripts/gen-vmlinux.sh
+      - name: Compile eBPF objects
+        run: make bpf
+
+  build:
+    runs-on: ubuntu-24.04
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+      - run: make build
+
+  # Loading the programs exercises the verifier on a real kernel. GitHub runners
+  # are privileged VMs, so a smoke load is possible; the kernel-version matrix
+  # (5.8 / 5.15 / 6.1 / 6.8) belongs here via a vmtest-style harness — tracked in
+  # docs/ROADMAP.md.

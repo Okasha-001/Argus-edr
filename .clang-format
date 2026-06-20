@@ -1,0 +1,9 @@
+# Kernel/eBPF C follows the Linux kernel style, which libbpf and the
+# upstream BPF selftests use. Keeps our sensors readable next to kernel code.
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+AlignConsecutiveDeclarations: false
+SortIncludes: false

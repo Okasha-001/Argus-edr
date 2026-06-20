@@ -1,0 +1,291 @@
+// SPDX-License-Identifier: GPL-2.0
+//
+// ARGUS sensors: process, file and network telemetry collected from stable
+// tracepoints and a couple of kprobes. The programs are intentionally "dumb" —
+// they collect and forward, all interpretation lives in the Go agent. That
+// keeps each program small, easy to verify, and cheap at runtime.
+
+#include "vmlinux.h"
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_core_read.h>
+#include <bpf/bpf_tracing.h>
+#include <bpf/bpf_endian.h>
+#include "common.h"
+
+// GPL is required to call the bpf helpers we rely on (ringbuf, probe_read, ...).
+char LICENSE[] SEC("license") = "GPL";
+
+// Open flags we care about. We only forward writes/creates from the openat
+// firehose to keep the ring buffer from drowning in read traffic; targeted
+// read detection (e.g. /etc/shadow) is handled by the LSM file_open hook.
+#define O_WRONLY 0x1
+#define O_RDWR   0x2
+#define O_CREAT  0x40
+#define O_TRUNC  0x200
+
+#define RINGBUF_BYTES (8 * 1024 * 1024)
+
+struct {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, RINGBUF_BYTES);
+} events SEC(".maps");
+
+// The event struct dwarfs the 512-byte BPF stack, so we stage each event in a
+// per-CPU scratch slot instead of on the stack.
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, struct event);
+} scratch SEC(".maps");
+
+// argv is only available at execve *entry*, but the resolved path and the new
+// comm are only correct at sched_process_exec. We capture argv here keyed by
+// pid_tgid and stitch it onto the exec event a moment later.
+struct argv_buf {
+    __u32 len;
+    char  data[MAX_ARGS_LEN];
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 8192);
+    __type(key, __u64);
+    __type(value, struct argv_buf);
+} argv_cache SEC(".maps");
+
+// argv_buf is also too large for the stack, so it is assembled in a per-CPU
+// slot before being copied into the per-pid cache above.
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, struct argv_buf);
+} argv_scratch SEC(".maps");
+
+static __always_inline struct event *new_event(__u32 type)
+{
+    __u32 zero = 0;
+    struct event *e = bpf_map_lookup_elem(&scratch, &zero);
+    if (!e)
+        return NULL;
+
+    __builtin_memset(e, 0, sizeof(*e));
+    e->type = type;
+    e->timestamp_ns = bpf_ktime_get_ns();
+    e->cgroup_id = bpf_get_current_cgroup_id();
+
+    __u64 id = bpf_get_current_pid_tgid();
+    e->pid = id >> 32;
+    e->tid = (__u32)id;
+
+    __u64 ug = bpf_get_current_uid_gid();
+    e->uid = (__u32)ug;
+    e->gid = ug >> 32;
+
+    struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+    e->ppid = BPF_CORE_READ(task, real_parent, tgid);
+
+    bpf_get_current_comm(&e->comm, sizeof(e->comm));
+    return e;
+}
+
+static __always_inline void emit(struct event *e)
+{
+    bpf_ringbuf_output(&events, e, sizeof(*e), 0);
+}
+
+SEC("tracepoint/syscalls/sys_enter_execve")
+int handle_execve(struct trace_event_raw_sys_enter *ctx)
+{
+    __u32 zero = 0;
+    struct argv_buf *buf = bpf_map_lookup_elem(&argv_scratch, &zero);
+    if (!buf)
+        return 0;
+    __builtin_memset(buf, 0, sizeof(*buf));
+
+    const char *const *argv = (const char *const *)ctx->args[1];
+    __u32 off = 0;
+
+#pragma unroll
+    for (int i = 0; i < MAX_ARGV_COUNT; i++) {
+        const char *argp = NULL;
+        bpf_probe_read_user(&argp, sizeof(argp), &argv[i]);
+        if (!argp)
+            break;
+        if (off >= MAX_ARGS_LEN - 1)
+            break;
+        off &= (MAX_ARGS_LEN - 1);
+        long n = bpf_probe_read_user_str(&buf->data[off], MAX_ARGS_LEN - off, argp);
+        if (n <= 0)
+            break;
+        off += n;
+    }
+
+    buf->len = off;
+    __u64 id = bpf_get_current_pid_tgid();
+    bpf_map_update_elem(&argv_cache, &id, buf, BPF_ANY);
+    return 0;
+}
+
+SEC("tracepoint/sched/sched_process_exec")
+int handle_exec(struct trace_event_raw_sched_process_exec *ctx)
+{
+    struct event *e = new_event(EVENT_EXEC);
+    if (!e)
+        return 0;
+
+    unsigned short fname_off = ctx->__data_loc_filename & 0xFFFF;
+    bpf_probe_read_kernel_str(&e->filename, sizeof(e->filename),
+                              (void *)ctx + fname_off);
+
+    __u64 id = bpf_get_current_pid_tgid();
+    struct argv_buf *buf = bpf_map_lookup_elem(&argv_cache, &id);
+    if (buf) {
+        __builtin_memcpy(e->args, buf->data, MAX_ARGS_LEN);
+        e->args_len = buf->len;
+        bpf_map_delete_elem(&argv_cache, &id);
+    }
+
+    emit(e);
+    return 0;
+}
+
+SEC("tracepoint/sched/sched_process_fork")
+int handle_fork(struct trace_event_raw_sched_process_fork *ctx)
+{
+    struct event *e = new_event(EVENT_FORK);
+    if (!e)
+        return 0;
+
+    e->pid = ctx->child_pid;
+    e->tid = ctx->child_pid;
+    e->ppid = ctx->parent_pid;
+
+    unsigned short comm_off = ctx->__data_loc_child_comm & 0xFFFF;
+    bpf_probe_read_kernel_str(&e->comm, sizeof(e->comm), (void *)ctx + comm_off);
+
+    emit(e);
+    return 0;
+}
+
+SEC("tracepoint/sched/sched_process_exit")
+int handle_exit(void *ctx)
+{
+    struct event *e = new_event(EVENT_EXIT);
+    if (!e)
+        return 0;
+
+    // Only the thread-group leader's exit marks the process exiting.
+    if (e->pid != e->tid)
+        return 0;
+
+    struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+    e->ret = BPF_CORE_READ(task, exit_code) >> 8;
+
+    __u64 id = bpf_get_current_pid_tgid();
+    bpf_map_delete_elem(&argv_cache, &id);
+
+    emit(e);
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_enter_openat")
+int handle_openat(struct trace_event_raw_sys_enter *ctx)
+{
+    int flags = (int)ctx->args[2];
+    if (!(flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC)))
+        return 0;
+
+    struct event *e = new_event(EVENT_OPEN);
+    if (!e)
+        return 0;
+
+    bpf_probe_read_user_str(&e->filename, sizeof(e->filename),
+                            (const char *)ctx->args[1]);
+    e->fmode = (__u16)flags;
+
+    emit(e);
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_enter_unlinkat")
+int handle_unlinkat(struct trace_event_raw_sys_enter *ctx)
+{
+    struct event *e = new_event(EVENT_UNLINK);
+    if (!e)
+        return 0;
+
+    bpf_probe_read_user_str(&e->filename, sizeof(e->filename),
+                            (const char *)ctx->args[1]);
+
+    emit(e);
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_enter_renameat2")
+int handle_renameat2(struct trace_event_raw_sys_enter *ctx)
+{
+    struct event *e = new_event(EVENT_RENAME);
+    if (!e)
+        return 0;
+
+    bpf_probe_read_user_str(&e->filename, sizeof(e->filename),
+                            (const char *)ctx->args[1]);
+    bpf_probe_read_user_str(&e->args, sizeof(e->args),
+                            (const char *)ctx->args[3]);
+
+    emit(e);
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_enter_fchmodat")
+int handle_fchmodat(struct trace_event_raw_sys_enter *ctx)
+{
+    struct event *e = new_event(EVENT_CHMOD);
+    if (!e)
+        return 0;
+
+    bpf_probe_read_user_str(&e->filename, sizeof(e->filename),
+                            (const char *)ctx->args[1]);
+    e->fmode = (__u16)ctx->args[2];
+
+    emit(e);
+    return 0;
+}
+
+static __always_inline void fill_socket(struct event *e, struct sock *sk)
+{
+    e->family = BPF_CORE_READ(sk, __sk_common.skc_family);
+    e->saddr = BPF_CORE_READ(sk, __sk_common.skc_rcv_saddr);
+    e->daddr = BPF_CORE_READ(sk, __sk_common.skc_daddr);
+    e->dport = bpf_ntohs(BPF_CORE_READ(sk, __sk_common.skc_dport));
+    e->sport = BPF_CORE_READ(sk, __sk_common.skc_num);
+}
+
+SEC("kprobe/tcp_connect")
+int BPF_KPROBE(handle_tcp_connect, struct sock *sk)
+{
+    struct event *e = new_event(EVENT_CONNECT);
+    if (!e)
+        return 0;
+
+    fill_socket(e, sk);
+    emit(e);
+    return 0;
+}
+
+SEC("kretprobe/inet_csk_accept")
+int BPF_KRETPROBE(handle_inet_accept, struct sock *sk)
+{
+    if (!sk)
+        return 0;
+
+    struct event *e = new_event(EVENT_ACCEPT);
+    if (!e)
+        return 0;
+
+    fill_socket(e, sk);
+    emit(e);
+    return 0;
+}

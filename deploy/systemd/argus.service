@@ -1,0 +1,26 @@
+[Unit]
+Description=ARGUS eBPF endpoint detection & response agent
+Documentation=https://github.com/argus-edr/argus
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/argus run --config /etc/argus/config.yaml
+Restart=always
+RestartSec=5
+
+# Least privilege: load eBPF without full root.
+AmbientCapabilities=CAP_BPF CAP_SYS_ADMIN CAP_PERFMON
+CapabilityBoundingSet=CAP_BPF CAP_SYS_ADMIN CAP_PERFMON
+LimitMEMLOCK=infinity
+
+# Hardening.
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/log/argus
+ProtectKernelLogs=false
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

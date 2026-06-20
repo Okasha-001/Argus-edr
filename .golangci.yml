@@ -1,0 +1,11 @@
+version: "2"
+
+# The default linter set (errcheck, govet, ineffassign, staticcheck, unused)
+# plus misspell. The std-error-handling exclusion drops the well-known noise of
+# deferred Close()/Flush() on cleanup paths, which is intentional here.
+linters:
+  enable:
+    - misspell
+  exclusions:
+    presets:
+      - std-error-handling

@@ -1,0 +1,27 @@
+title: Remote Payload Piped To A Shell
+id: 3f6a2b18-7d4e-4c9a-8f10-2b3c4d5e6f70
+status: experimental
+description: Detects curl or wget downloading content that is piped directly into a shell, a common in-memory delivery and execution pattern.
+references:
+  - https://attack.mitre.org/techniques/T1059/004/
+author: ARGUS
+date: 2026/06/20
+tags:
+  - attack.execution
+  - attack.t1059.004
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  download:
+    Image|endswith:
+      - /curl
+      - /wget
+  pipe_to_shell:
+    CommandLine|contains:
+      - '| sh'
+      - '| bash'
+      - '|sh'
+      - '|bash'
+  condition: download and pipe_to_shell
+level: medium

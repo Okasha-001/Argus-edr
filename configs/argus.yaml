@@ -1,0 +1,72 @@
+# ARGUS agent configuration.
+# Every value below is the built-in default; the file only needs the keys you
+# want to override. Validated on startup — unknown keys are rejected.
+
+agent:
+  hostname: ""        # auto-detected from the OS when empty
+  log_level: info     # debug | info | warn | error
+  log_format: json    # json | text
+
+input:
+  source: ebpf        # ebpf (live kernel) | replay (recorded NDJSON)
+  bpf_object: /usr/lib/argus/edr.bpf.o
+  ring_buffer_bytes: 8388608   # 8 MiB; raised under high event load
+  replay_file: ""     # path to NDJSON events when source=replay
+
+enrichment:
+  process_tree: true
+  resolve_users: true
+  container_aware: true
+  hash_executables: false      # SHA-256 of the binary; off by default (I/O cost)
+  hash_max_bytes: 33554432     # skip hashing files larger than 32 MiB
+
+detection:
+  rules_dir: /etc/argus/rules
+  correlation:
+    enabled: true
+    window_seconds: 30
+    incident_threshold: 75     # cumulative risk score that opens an incident
+
+# Threat-intelligence (IOC) feeds: newline-delimited files of malicious IPs,
+# CIDRs, domains and SHA-256 hashes. Off by default. A hit raises a high-severity
+# alert that flows through correlation and response like any rule match. Refresh
+# the files out of band (cron, config management); the agent loads them at start.
+# See docs/INTEL.md. To import upstream Sigma rules into rules_dir, see
+# docs/SIGMA.md and `argus sigma`.
+intel:
+  enabled: false
+  # feeds:
+  #   - /etc/argus/intel/iocs.txt
+
+response:
+  mode: "off"         # off | dry-run | enforce
+  # Processes that must never be killed/blocked, even on a match. The agent
+  # protects you from locking yourself out of the host.
+  allowlist_paths:
+    - /usr/lib/systemd/systemd
+    - /usr/sbin/sshd
+
+outputs:
+  - type: stdout
+    format: ecs       # ecs (one JSON object per line) | pretty
+  # - type: file
+  #   path: /var/log/argus/events.ndjson
+  #   rotate_max_bytes: 104857600
+  # - type: loki
+  #   endpoint: http://localhost:3100/loki/api/v1/push
+  #   labels:
+  #     job: argus
+
+# Fleet management: connect this agent to an argus-server control plane over
+# mTLS. Off by default — a standalone agent needs no control plane. When enabled
+# the agent enrolls, heartbeats, streams its alerts upstream, and applies pushed
+# commands (rule updates, response posture). See docs/FLEET.md.
+fleet:
+  enabled: false
+  # server_address: argus.example.com:8443   # control-plane gRPC endpoint
+  # server_name: argus.example.com           # name on the server certificate
+  # ca_file: /etc/argus/fleet/ca.pem         # CA that signed both ends
+  # cert_file: /etc/argus/fleet/agent.pem    # this agent's client certificate
+  # key_file: /etc/argus/fleet/agent-key.pem
+  # enrollment_token: ""                     # shared secret required to enroll
+  # heartbeat_seconds: 30

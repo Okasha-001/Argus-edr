@@ -1,0 +1,31 @@
+# Build artifacts
+/build/
+/dist/
+*.o
+*.a
+*.so
+
+# Generated from kernel BTF — reproduced locally via `make vmlinux`, never committed.
+bpf/vmlinux.h
+
+# bpf2go output (only if the embedded loader path is enabled)
+internal/bpfloader/*_bpfel.go
+internal/bpfloader/*_bpfeb.go
+
+# Compiled binaries
+/argus
+/argus-server
+
+# Go
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Toolchain / local tooling logs
+.toolchain-install.log
+
+# Editors
+.idea/
+.vscode/
+*.swp

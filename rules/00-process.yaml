@@ -1,0 +1,35 @@
+# Process execution detections.
+
+- id: R-0001
+  name: Execution from a temporary directory
+  description: A binary executed from /tmp, /var/tmp or /dev/shm — a common malware staging location.
+  severity: high
+  risk_score: 50
+  technique:
+    id: T1036
+    name: Masquerading
+    tactic: defense-evasion
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - any:
+          - { field: process.executable, op: startswith, value: "/tmp/" }
+          - { field: process.executable, op: startswith, value: "/var/tmp/" }
+          - { field: process.executable, op: startswith, value: "/dev/shm/" }
+
+- id: R-0007
+  name: Reverse shell from a service process
+  description: A network service spawned a shell whose stdio is a socket — the signature of a reverse shell.
+  severity: critical
+  risk_score: 90
+  response: kill
+  technique:
+    id: T1059
+    name: Command and Scripting Interpreter
+    tactic: execution
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.name, op: in, value: [sh, bash, dash, zsh, ksh] }
+      - { field: process.parent.name, op: in, value: [nginx, apache2, httpd, php-fpm, node, java] }
+      - { field: process.stdio_socket, op: eq, value: true }

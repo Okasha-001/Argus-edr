@@ -1,0 +1,106 @@
+// Package ruleset serves the fleet's canonical detection rules to agents. It
+// loads a directory of YAML rule files, validates them with the same engine the
+// agents run — so the control plane never distributes a ruleset that won't
+// compile — and versions the bundle by a content hash. Agents compare that
+// version on heartbeat and pull only when it changes.
+package ruleset
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"sync"
+
+	"github.com/argus-edr/argus/internal/detect"
+)
+
+// versionLen is how many hex characters of the content hash name a version. A
+// full SHA-256 is overkill for a human-facing tag; 12 hex chars (48 bits) make
+// an accidental collision across a fleet's rule history negligible.
+const versionLen = 12
+
+// File is one rule file shipped to agents: its base name and raw YAML bytes.
+type File struct {
+	Name    string
+	Content []byte
+}
+
+// Provider holds the current rule bundle and serves it concurrently. Reload
+// swaps in a new bundle atomically, so an in-flight GetRules never sees a
+// half-updated set.
+type Provider struct {
+	dir string
+
+	mu      sync.RWMutex
+	version string
+	files   []File
+}
+
+// NewProvider loads and validates the rules in dir, returning an error if any
+// rule fails to compile so a misconfigured server refuses to start rather than
+// shipping broken rules.
+func NewProvider(dir string) (*Provider, error) {
+	provider := &Provider{dir: dir}
+	if err := provider.Reload(); err != nil {
+		return nil, err
+	}
+	return provider, nil
+}
+
+// Reload re-reads the rule directory and replaces the served bundle. The rules
+// are validated before the swap, so a bad edit leaves the previous good bundle
+// in place.
+func (p *Provider) Reload() error {
+	if _, err := detect.LoadDir(p.dir); err != nil {
+		return fmt.Errorf("validate rules in %s: %w", p.dir, err)
+	}
+
+	paths, err := filepath.Glob(filepath.Join(p.dir, "*.yaml"))
+	if err != nil {
+		return fmt.Errorf("scan rules dir: %w", err)
+	}
+	sort.Strings(paths)
+
+	files := make([]File, 0, len(paths))
+	hash := sha256.New()
+	for _, path := range paths {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read rule file %s: %w", path, err)
+		}
+		name := filepath.Base(path)
+		// Fold the name and length into the hash so renames and boundary shifts
+		// change the version even if the concatenated bytes would not.
+		fmt.Fprintf(hash, "%s\x00%d\x00", name, len(content))
+		hash.Write(content)
+		files = append(files, File{Name: name, Content: content})
+	}
+	version := hex.EncodeToString(hash.Sum(nil))[:versionLen]
+
+	p.mu.Lock()
+	p.version = version
+	p.files = files
+	p.mu.Unlock()
+	return nil
+}
+
+// Version returns the current bundle's content version.
+func (p *Provider) Version() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.version
+}
+
+// Bundle returns the current version and a copy of the file list. The slice is
+// copied so a concurrent Reload cannot mutate a caller's view mid-iteration; the
+// file contents themselves are immutable after load and are shared.
+func (p *Provider) Bundle() (string, []File) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	files := make([]File, len(p.files))
+	copy(files, p.files)
+	return p.version, files
+}

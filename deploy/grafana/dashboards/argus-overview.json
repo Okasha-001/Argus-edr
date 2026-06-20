@@ -1,0 +1,58 @@
+{
+  "uid": "argus-overview",
+  "title": "ARGUS — Overview",
+  "tags": ["argus", "edr", "security"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Alerts (range)",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "value" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "sum(count_over_time({job=\"argus\"} |~ \"\\\"kind\\\":\\\"alert\\\"\" [$__range]))", "queryType": "instant" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Events (range)",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "value" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "sum(count_over_time({job=\"argus\"} [$__range]))", "queryType": "instant" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Alert rate",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "sum(count_over_time({job=\"argus\"} |~ \"\\\"kind\\\":\\\"alert\\\"\" [$__auto]))", "legendFormat": "alerts" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "logs",
+      "title": "Recent alerts & incidents",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 6 },
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "{job=\"argus\"} |~ \"\\\"kind\\\":\\\"alert\\\"\"" }
+      ]
+    }
+  ]
+}

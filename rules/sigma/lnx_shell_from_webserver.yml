@@ -1,0 +1,30 @@
+title: Shell Spawned From A Web Server Process
+id: c2a4e6f8-1b3d-4f5a-9c7e-8d0f1a2b3c4d
+status: experimental
+description: Detects an interactive shell whose parent is a web server, a strong indicator of web-shell or exploitation-driven command execution.
+references:
+  - https://attack.mitre.org/techniques/T1505/003/
+author: ARGUS
+date: 2026/06/20
+tags:
+  - attack.persistence
+  - attack.t1505.003
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  shell:
+    Image|endswith:
+      - /sh
+      - /bash
+      - /dash
+  webserver_parent:
+    ParentImage|endswith:
+      - /nginx
+      - /apache2
+      - /httpd
+      - /php-fpm
+  condition: shell and webserver_parent
+falsepositives:
+  - Deployment or maintenance scripts launched by the web server
+level: high
