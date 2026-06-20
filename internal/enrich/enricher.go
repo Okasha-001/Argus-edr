@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/argus-edr/argus/internal/model"
+	"github.com/argus-edr/argus/internal/yara"
 )
 
 // Options selects which enrichers are active, mirroring the config block.
@@ -15,6 +16,8 @@ type Options struct {
 	ContainerAware  bool
 	HashExecutables bool
 	HashMaxBytes    int64
+	Yara            *yara.Engine // nil disables YARA scanning
+	YaraMaxBytes    int64
 }
 
 // Enricher annotates events in place as they pass through the pipeline. In-place
@@ -25,6 +28,7 @@ type Enricher struct {
 	users      *UserResolver
 	containers *ContainerResolver
 	hasher     *Hasher
+	yara       *YaraScanner
 }
 
 // New builds an enricher with only the components enabled in opts.
@@ -41,6 +45,9 @@ func New(opts Options) *Enricher {
 	}
 	if opts.HashExecutables {
 		e.hasher = NewHasher(opts.HashMaxBytes)
+	}
+	if opts.Yara != nil {
+		e.yara = NewYaraScanner(opts.Yara, opts.YaraMaxBytes)
 	}
 	return e
 }
@@ -59,7 +66,17 @@ func (e *Enricher) Enrich(event *model.Event) {
 	if e.hasher != nil {
 		e.hashExecutable(event)
 	}
+	if e.yara != nil {
+		e.scanExecutable(event)
+	}
 	e.markStdioSocket(event)
+}
+
+func (e *Enricher) scanExecutable(event *model.Event) {
+	isExec := event.Type == model.EventExec || event.Type == model.EventExecBlocked
+	if isExec && event.Process.Executable != "" && len(event.Process.YaraMatches) == 0 {
+		event.Process.YaraMatches = e.yara.Scan(event.Process.Executable)
+	}
 }
 
 func (e *Enricher) hashExecutable(event *model.Event) {

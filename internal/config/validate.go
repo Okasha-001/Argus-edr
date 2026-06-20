@@ -52,6 +52,9 @@ func (c Config) validate() error {
 	if c.Anomaly.Enabled && c.Anomaly.BaselineFile == "" {
 		return fmt.Errorf("anomaly.baseline_file is required when anomaly.enabled is true")
 	}
+	if c.Yara.Enabled && c.Yara.RulesDir == "" {
+		return fmt.Errorf("yara.rules_dir is required when yara.enabled is true")
+	}
 	return nil
 }
 

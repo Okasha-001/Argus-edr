@@ -86,6 +86,7 @@ type Process struct {
 	StartTimeNs uint64   `json:"start_time_ns,omitempty"`
 	SHA256      string   `json:"sha256,omitempty"`
 	StdioSocket bool     `json:"stdio_socket,omitempty"`
+	YaraMatches []string `json:"yara_matches,omitempty"`
 
 	ParentName       string   `json:"parent_name,omitempty"`
 	ParentExecutable string   `json:"parent_executable,omitempty"`

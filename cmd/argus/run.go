@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/argus-edr/argus/internal/pipeline"
 	"github.com/argus-edr/argus/internal/respond"
 	"github.com/argus-edr/argus/internal/version"
+	"github.com/argus-edr/argus/internal/yara"
 )
 
 func runAgent(args []string) error {
@@ -49,6 +51,10 @@ func runAgent(args []string) error {
 	if matcher != nil {
 		engine.SetIntel(matcher)
 	}
+	yaraEngine, err := buildYara(cfg, logger)
+	if err != nil {
+		return err
+	}
 	responder := respond.New(
 		respond.ParseMode(cfg.Response.Mode),
 		respond.ParseMode(cfg.Response.MaxMode),
@@ -69,7 +75,7 @@ func runAgent(args []string) error {
 
 	agent := pipeline.New(pipeline.Params{
 		Source:    buildSource(cfg, logger),
-		Enricher:  enrich.New(enrichOptions(cfg)),
+		Enricher:  enrich.New(enrichOptions(cfg, yaraEngine)),
 		Scorer:    scorer,
 		Engine:    engine,
 		Responder: responder,
@@ -201,14 +207,46 @@ func loadEngine(rulesDir string, correlator *detect.Correlator) (*detect.Engine,
 	return detect.NewEngine(rules, correlator), nil
 }
 
-func enrichOptions(cfg config.Config) enrich.Options {
+func enrichOptions(cfg config.Config, yaraEngine *yara.Engine) enrich.Options {
 	return enrich.Options{
 		ProcessTree:     cfg.Enrichment.ProcessTree,
 		ResolveUsers:    cfg.Enrichment.ResolveUsers,
 		ContainerAware:  cfg.Enrichment.ContainerAware,
 		HashExecutables: cfg.Enrichment.HashExecutables,
 		HashMaxBytes:    cfg.Enrichment.HashMaxBytes,
+		Yara:            yaraEngine,
+		YaraMaxBytes:    cfg.Yara.MaxBytes,
 	}
+}
+
+// buildYara compiles every *.yar file under the configured directory into a YARA
+// engine, or returns nil when scanning is disabled.
+func buildYara(cfg config.Config, logger *slog.Logger) (*yara.Engine, error) {
+	if !cfg.Yara.Enabled {
+		return nil, nil
+	}
+	paths, err := filepath.Glob(filepath.Join(cfg.Yara.RulesDir, "*.yar"))
+	if err != nil {
+		return nil, fmt.Errorf("glob yara rules: %w", err)
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("yara enabled but no .yar files in %s", cfg.Yara.RulesDir)
+	}
+	var source strings.Builder
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read yara rule %s: %w", path, err)
+		}
+		source.Write(data)
+		source.WriteByte('\n')
+	}
+	engine, err := yara.Compile(source.String())
+	if err != nil {
+		return nil, fmt.Errorf("compile yara rules: %w", err)
+	}
+	logger.Info("yara loaded", "files", len(paths), "dir", cfg.Yara.RulesDir)
+	return engine, nil
 }
 
 func logStats(logger *slog.Logger, agent *pipeline.Pipeline) {

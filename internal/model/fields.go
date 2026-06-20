@@ -1,6 +1,9 @@
 package model
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 // fieldAccessor returns a rule-addressable value and whether it is present.
 // Numeric fields are normalized to int64 so the comparison operators have a
@@ -21,6 +24,7 @@ var fieldAccessors = map[string]fieldAccessor{
 	"process.command_line":      func(e *Event) (any, bool) { return e.Process.CommandLine, e.Process.CommandLine != "" },
 	"process.stdio_socket":      func(e *Event) (any, bool) { return e.Process.StdioSocket, true },
 	"process.hash.sha256":       func(e *Event) (any, bool) { return e.Process.SHA256, e.Process.SHA256 != "" },
+	"yara.matched":              func(e *Event) (any, bool) { return strings.Join(e.Process.YaraMatches, ","), len(e.Process.YaraMatches) > 0 },
 	"process.parent.name":       func(e *Event) (any, bool) { return e.Process.ParentName, e.Process.ParentName != "" },
 	"process.parent.executable": func(e *Event) (any, bool) { return e.Process.ParentExecutable, e.Process.ParentExecutable != "" },
 

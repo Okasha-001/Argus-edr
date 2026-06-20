@@ -35,6 +35,7 @@ type Config struct {
 	Fleet      Fleet      `yaml:"fleet"`
 	Intel      Intel      `yaml:"intel"`
 	Anomaly    Anomaly    `yaml:"anomaly"`
+	Yara       Yara       `yaml:"yara"`
 }
 
 type Agent struct {
@@ -118,9 +119,19 @@ type Anomaly struct {
 	BaselineFile string `yaml:"baseline_file"`
 }
 
+// Yara scans executed files against signature rules and exposes yara.matched to
+// the rule engine. Off by default; when enabled it loads every *.yar file under
+// RulesDir and scans up to MaxBytes of each executable.
+type Yara struct {
+	Enabled  bool   `yaml:"enabled"`
+	RulesDir string `yaml:"rules_dir"`
+	MaxBytes int64  `yaml:"max_bytes"`
+}
+
 const (
 	defaultRingBufferBytes  = 8 * 1024 * 1024
 	defaultHashMaxBytes     = 32 * 1024 * 1024
+	defaultYaraMaxBytes     = 16 * 1024 * 1024
 	defaultWindowSeconds    = 30
 	defaultIncidentScore    = 75
 	defaultHeartbeatSeconds = 30
@@ -155,6 +166,7 @@ func Defaults() Config {
 		},
 		Outputs: []Output{{Type: "stdout", Format: "ecs"}},
 		Fleet:   Fleet{Enabled: false, HeartbeatSeconds: defaultHeartbeatSeconds},
+		Yara:    Yara{Enabled: false, MaxBytes: defaultYaraMaxBytes},
 	}
 }
 

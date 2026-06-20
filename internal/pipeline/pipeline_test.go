@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"math/rand"
@@ -16,6 +17,7 @@ import (
 	"github.com/argus-edr/argus/internal/enrich"
 	"github.com/argus-edr/argus/internal/intel"
 	"github.com/argus-edr/argus/internal/model"
+	"github.com/argus-edr/argus/internal/yara"
 )
 
 type captureSink struct {
@@ -177,6 +179,47 @@ func TestPipelineAnomalyScoring(t *testing.T) {
 
 	if !slices.Contains(sink.alertRuleIDs, "R-0050") {
 		t.Errorf("expected the anomaly rule R-0050 to fire on the rare exec; alerts = %v", sink.alertRuleIDs)
+	}
+}
+
+// TestPipelineYaraDetection proves the full signature path: the enrich stage
+// scans an executed file (here a real EICAR sample in a temp dir) against the
+// YARA engine, sets yara.matched, and rule R-0073 fires on it end to end.
+func TestPipelineYaraDetection(t *testing.T) {
+	engine, err := yara.Compile(`rule EICAR_Test_File { strings: $e = "EICAR-STANDARD-ANTIVIRUS-TEST-FILE" condition: $e }`)
+	if err != nil {
+		t.Fatalf("compile yara: %v", err)
+	}
+	rules, err := detect.LoadDir("../../rules")
+	if err != nil {
+		t.Fatalf("load rules: %v", err)
+	}
+
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "dropper")
+	eicar := `X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*`
+	if err := os.WriteFile(bin, []byte(eicar), 0o755); err != nil {
+		t.Fatalf("write bin: %v", err)
+	}
+	eventsPath := filepath.Join(dir, "events.ndjson")
+	events := fmt.Sprintf(`{"@timestamp":"2026-06-21T10:00:00Z","host":"web-01","action":"exec","process":{"pid":4242,"ppid":1,"name":"dropper","executable":%q}}`+"\n", bin)
+	if err := os.WriteFile(eventsPath, []byte(events), 0o644); err != nil {
+		t.Fatalf("write events: %v", err)
+	}
+
+	sink := &captureSink{}
+	agent := New(Params{
+		Source:   NewReplaySource(eventsPath),
+		Enricher: enrich.New(enrich.Options{Yara: engine, YaraMaxBytes: 1 << 20}),
+		Engine:   detect.NewEngine(rules, nil),
+		Sink:     sink,
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err := agent.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !slices.Contains(sink.alertRuleIDs, "R-0073") {
+		t.Errorf("expected R-0073 (yara) to fire; alerts = %v", sink.alertRuleIDs)
 	}
 }
 
