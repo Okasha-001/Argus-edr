@@ -40,9 +40,11 @@ line count; the phases add real capability, not padding.
 
 ## Next
 
-- **Sensors:** ptrace (T1055), module/bpf load (T1014), memfd exec (T1620),
-  container escape (T1611), and the LSM `file_open` hook for targeted read
-  detection (closes the R-0002 live gap).
+- **Sensors:** done — ptrace (T1055), module/bpf load (T1547.006), memfd exec
+  (T1620), RWX mmap (T1055), setuid (T1548), DNS query names (T1071.004), IPv6
+  endpoints, and a `security_file_open` read sensor that closes the R-0002 live
+  gap. Remaining: container escape (T1611); a kernel-level *deny* on file_open is
+  Phase 6 (enforcement).
 - **Detection:** grow to 40+ techniques; ring-buffer-loss and per-program
   runtime metrics.
 - **Response:** graduated response and tc-based traffic shaping (egress
