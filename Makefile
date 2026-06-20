@@ -54,6 +54,13 @@ build:
 	$(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN_DIR)/argus ./cmd/argus
 	$(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN_DIR)/argus-server ./cmd/argus-server
 
+## ui: validate the embedded web console assets (no Node; assets ship in-binary)
+.PHONY: ui
+ui:
+	@test -f ui/static/index.html || { echo "ui/static/index.html missing"; exit 1; }
+	$(GO) build ./ui
+	@echo "web console assets OK (served by argus-server --ui-addr)"
+
 ## all: build both the eBPF objects and the Go binaries
 .PHONY: all
 all: bpf build

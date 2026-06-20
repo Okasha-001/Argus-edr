@@ -119,7 +119,10 @@ Binds to `127.0.0.1:8080` by default (not mutually authenticated — keep local)
 | `GET /healthz`, `GET /version` | Liveness / version. |
 | `GET /api/agents` | Enrolled agents + `online` flag. |
 | `GET /api/alerts?…` | Alert history, newest first. Optional filters: `host`, `severity`, `technique`, `since`/`until` (RFC3339), `incidents=true`, `limit=N`. |
+| `GET /api/alerts/{id}` | One stored alert by id. |
 | `GET /api/signals` | Recent cross-host signals. |
+| `GET /api/rules` | Rule catalogue (id/name/severity/technique) + bundle version. |
+| `GET /api/stream` | Live alert feed as Server-Sent Events (`event: alert`). |
 | `POST /api/agents/{id}/commands` | Queue a command `{"kind":…,"argument":…}`. |
 | `POST /api/rules/reload` | Re-read `--rules`, bump version (agents converge next heartbeat). |
 
@@ -135,6 +138,19 @@ argus-server serve      --grpc :8443 --http 127.0.0.1:8080 --rules ./rules \
 argus-server gen-certs  --dir ./fleet-certs --dns argus-server
 argus run               # agent; fleet activated by the config's fleet.enabled
 ```
+
+### 8.0 Web console (`--ui-addr`)
+
+`argus-server serve --ui-addr 127.0.0.1:9090` serves an embedded, dependency-free
+web console (`ui/`, vanilla HTML/JS via `go:embed` — no Node, no build step). It
+ships **inside the binary**; there is no separate deploy. The console binds only
+when `--ui-addr` is set (off by default) and serves on one origin: static assets at
+`/`, the JSON API and the SSE feed under `/api/` (so no CORS).
+
+Views: **Fleet** overview (agents + rollup counters), **Live alerts** (history with
+host/severity/technique filters, plus a live SSE feed), **Incident timeline**
+(reconstructs a host's attack chain — process ▶ technique ▶ destination — from its
+alert history), and **Rule catalogue**. State-changing routes stay token-gated.
 
 ### 8.1 Persistent storage (`--store`)
 

@@ -34,12 +34,14 @@ type adminAPI struct {
 	token  string
 	logger *slog.Logger
 
+	stream *broadcaster
+
 	mu      sync.Mutex
 	signals []correlate.Signal
 }
 
 func newAdminAPI(backing store.Store, rules *ruleset.Provider, ttl time.Duration, token string, logger *slog.Logger) *adminAPI {
-	return &adminAPI{store: backing, rules: rules, ttl: ttl, token: token, logger: logger}
+	return &adminAPI{store: backing, rules: rules, ttl: ttl, token: token, logger: logger, stream: newBroadcaster()}
 }
 
 // recordSignal is the OnSignal hook for the gRPC service: it keeps the most
@@ -59,7 +61,10 @@ func (a *adminAPI) mux() http.Handler {
 	mux.HandleFunc("GET /version", a.handleVersion)
 	mux.HandleFunc("GET /api/agents", a.handleAgents)
 	mux.HandleFunc("GET /api/alerts", a.handleAlerts)
+	mux.HandleFunc("GET /api/alerts/{id}", a.handleAlertByID)
 	mux.HandleFunc("GET /api/signals", a.handleSignals)
+	mux.HandleFunc("GET /api/rules", a.handleRules)
+	mux.HandleFunc("GET /api/stream", a.handleStream)
 	// State-changing endpoints are authenticated: they can kill and quarantine.
 	mux.HandleFunc("POST /api/agents/{id}/commands", a.authed(a.handleEnqueueCommand))
 	mux.HandleFunc("POST /api/rules/reload", a.authed(a.handleReloadRules))
@@ -174,6 +179,26 @@ func alertFilterFromQuery(r *http.Request) store.AlertFilter {
 		filter.Until = until
 	}
 	return filter
+}
+
+func (a *adminAPI) handleAlertByID(w http.ResponseWriter, r *http.Request) {
+	record, ok := a.store.AlertByID(r.PathValue("id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "unknown alert")
+		return
+	}
+	writeJSON(w, http.StatusOK, record)
+}
+
+// handleRules serves the rule catalogue (id/name/severity/technique) the console
+// displays, plus the served bundle version.
+func (a *adminAPI) handleRules(w http.ResponseWriter, _ *http.Request) {
+	catalogue, err := a.rules.Catalogue()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "rule catalogue: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"version": a.rules.Version(), "rules": catalogue})
 }
 
 func (a *adminAPI) handleSignals(w http.ResponseWriter, _ *http.Request) {

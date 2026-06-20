@@ -30,8 +30,11 @@ type Deps struct {
 	Correlator *correlate.CrossHost
 	// Token, when non-empty, is the shared secret an agent must present to
 	// enroll. Empty means open enrollment, for development only.
-	Token    string
+	Token string
+	// OnSignal is called for each cross-host signal; OnAlert for each persisted
+	// alert. Both feed the admin console (the latter drives the live SSE feed).
 	OnSignal func(correlate.Signal)
+	OnAlert  func(store.AlertRecord)
 	Logger   *slog.Logger
 	Clock    func() time.Time
 }
@@ -45,6 +48,7 @@ type Service struct {
 	correlator *correlate.CrossHost
 	token      string
 	onSignal   func(correlate.Signal)
+	onAlert    func(store.AlertRecord)
 	logger     *slog.Logger
 	clock      func() time.Time
 }
@@ -59,6 +63,10 @@ func New(deps Deps) *Service {
 	if onSignal == nil {
 		onSignal = func(correlate.Signal) {}
 	}
+	onAlert := deps.OnAlert
+	if onAlert == nil {
+		onAlert = func(store.AlertRecord) {}
+	}
 	clock := deps.Clock
 	if clock == nil {
 		clock = time.Now
@@ -69,6 +77,7 @@ func New(deps Deps) *Service {
 		correlator: deps.Correlator,
 		token:      deps.Token,
 		onSignal:   onSignal,
+		onAlert:    onAlert,
 		logger:     logger,
 		clock:      clock,
 	}
@@ -162,6 +171,7 @@ func (s *Service) ReportAlerts(stream grpc.ClientStreamingServer[fleetpb.AlertRe
 		}
 		record := recordFromReport(report)
 		s.store.RecordAlert(record)
+		s.onAlert(record)
 		if s.correlator != nil {
 			for _, signal := range s.correlator.Observe(record) {
 				s.logger.Warn("fleet signal",

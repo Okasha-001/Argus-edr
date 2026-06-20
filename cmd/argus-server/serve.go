@@ -5,11 +5,13 @@ import (
 	"crypto/tls"
 	"errors"
 	"flag"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/argus-edr/argus/server/correlate"
 	"github.com/argus-edr/argus/server/ruleset"
 	"github.com/argus-edr/argus/server/store"
+	"github.com/argus-edr/argus/ui"
 )
 
 const shutdownGrace = 10 * time.Second
@@ -31,6 +34,7 @@ func runServe(args []string) error {
 	flags := flag.NewFlagSet("serve", flag.ExitOnError)
 	grpcAddr := flags.String("grpc", ":8443", "gRPC (mTLS) listen address")
 	httpAddr := flags.String("http", "127.0.0.1:8080", "admin HTTP API listen address")
+	uiAddr := flags.String("ui-addr", "", "serve the web console on this address (empty = console off)")
 	rulesDir := flags.String("rules", "rules", "directory of YAML detection rules to distribute")
 	caFile := flags.String("ca", "", "CA certificate (PEM)")
 	certFile := flags.String("cert", "", "server certificate (PEM)")
@@ -87,24 +91,55 @@ func runServe(args []string) error {
 		Correlator: correlator,
 		Token:      *token,
 		OnSignal:   admin.recordSignal,
+		OnAlert:    admin.recordAlert,
 		Logger:     logger,
 	})
 
 	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsConfig)))
 	fleetpb.RegisterFleetServiceServer(grpcServer, service)
-	httpServer := &http.Server{Addr: *httpAddr, Handler: admin.mux(), ReadHeaderTimeout: 5 * time.Second}
+	adminHandler := admin.mux()
+	httpServer := &http.Server{Addr: *httpAddr, Handler: adminHandler, ReadHeaderTimeout: 5 * time.Second}
+
+	var uiServer *http.Server
+	if *uiAddr != "" {
+		uiServer = &http.Server{
+			Addr:              *uiAddr,
+			Handler:           consoleHandler(adminHandler, ui.Assets()),
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+		logger.Info("web console enabled", "ui_addr", *uiAddr)
+	}
 
 	return serveUntilSignal(serveTargets{
 		grpc: grpcServer, grpcAddr: *grpcAddr,
-		http: httpServer, logger: logger,
+		http: httpServer, ui: uiServer, logger: logger,
 		rulesVersion: rules.Version(),
 	})
+}
+
+// consoleHandler serves the embedded web console at / and routes API, health and
+// version requests to the admin handler, so the browser talks to one origin (no
+// CORS) while the console assets and the JSON API share a listener.
+func consoleHandler(adminHandler http.Handler, assets fs.FS) http.Handler {
+	fileServer := http.FileServer(http.FS(assets))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isAPIPath(r.URL.Path) {
+			adminHandler.ServeHTTP(w, r)
+			return
+		}
+		fileServer.ServeHTTP(w, r)
+	})
+}
+
+func isAPIPath(path string) bool {
+	return strings.HasPrefix(path, "/api/") || path == "/healthz" || path == "/version"
 }
 
 type serveTargets struct {
 	grpc         *grpc.Server
 	grpcAddr     string
 	http         *http.Server
+	ui           *http.Server
 	logger       *slog.Logger
 	rulesVersion string
 }
@@ -120,9 +155,12 @@ func serveUntilSignal(t serveTargets) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	errc := make(chan error, 2)
+	errc := make(chan error, 3)
 	go func() { errc <- t.grpc.Serve(listener) }()
 	go func() { errc <- t.http.ListenAndServe() }()
+	if t.ui != nil {
+		go func() { errc <- t.ui.ListenAndServe() }()
+	}
 
 	t.logger.Info("argus-server listening",
 		"grpc", t.grpcAddr, "http", t.http.Addr,
@@ -144,6 +182,11 @@ func serveUntilSignal(t serveTargets) error {
 	t.grpc.GracefulStop()
 	if err := t.http.Shutdown(shutdownCtx); err != nil {
 		t.logger.Warn("admin http shutdown", "err", err)
+	}
+	if t.ui != nil {
+		if err := t.ui.Shutdown(shutdownCtx); err != nil {
+			t.logger.Warn("console http shutdown", "err", err)
+		}
 	}
 	return nil
 }

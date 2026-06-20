@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/argus-edr/argus/internal/detect"
+	"github.com/argus-edr/argus/internal/model"
 )
 
 // versionLen is how many hex characters of the content hash name a version. A
@@ -92,6 +93,40 @@ func (p *Provider) Version() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.version
+}
+
+// RuleInfo is one rule's metadata for the console's rule catalogue.
+type RuleInfo struct {
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Severity    string          `json:"severity"`
+	Technique   model.Technique `json:"technique"`
+	Enabled     bool            `json:"enabled"`
+	RiskScore   int             `json:"risk_score"`
+}
+
+// Catalogue returns metadata for every rule in the served set. It recompiles the
+// directory with the same loader agents use; admin reads are infrequent, so the
+// re-read costs nothing meaningful and always reflects what was last reloaded.
+func (p *Provider) Catalogue() ([]RuleInfo, error) {
+	rules, err := detect.LoadDir(p.dir)
+	if err != nil {
+		return nil, fmt.Errorf("load rules for catalogue: %w", err)
+	}
+	infos := make([]RuleInfo, len(rules))
+	for i, rule := range rules {
+		infos[i] = RuleInfo{
+			ID:          rule.ID,
+			Name:        rule.Name,
+			Description: rule.Description,
+			Severity:    rule.Severity.String(),
+			Technique:   rule.Technique,
+			Enabled:     rule.Enabled,
+			RiskScore:   rule.RiskScore,
+		}
+	}
+	return infos, nil
 }
 
 // Bundle returns the current version and a copy of the file list. The slice is

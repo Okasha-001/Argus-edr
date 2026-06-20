@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ARGUS Console</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="logo">◆</span> ARGUS
+      <span class="tagline">eBPF EDR · control plane</span>
+    </div>
+    <div class="status">
+      <span id="conn" class="pill pill-off">live: connecting…</span>
+      <span id="version" class="muted"></span>
+    </div>
+  </header>
+
+  <nav>
+    <button class="tab active" data-view="fleet">Fleet</button>
+    <button class="tab" data-view="alerts">Live alerts</button>
+    <button class="tab" data-view="incident">Incident timeline</button>
+    <button class="tab" data-view="rules">Rule catalogue</button>
+  </nav>
+
+  <main>
+    <section id="fleet" class="view active">
+      <div class="cards" id="fleet-cards"></div>
+      <h2>Agents</h2>
+      <table id="agents">
+        <thead><tr>
+          <th>Host</th><th>Status</th><th>Version</th><th>Kernel</th>
+          <th>Events</th><th>Alerts</th><th>Incidents</th><th>Rules</th><th>Last seen</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="alerts" class="view">
+      <div class="toolbar">
+        <input id="f-host" placeholder="host" />
+        <select id="f-sev">
+          <option value="">any severity</option>
+          <option value="critical">critical</option>
+          <option value="high">high</option>
+          <option value="medium">medium</option>
+          <option value="low">low</option>
+        </select>
+        <input id="f-tech" placeholder="technique (e.g. T1059)" />
+        <label class="check"><input type="checkbox" id="f-inc" /> incidents only</label>
+        <button id="f-apply">Filter</button>
+        <span class="muted" id="alerts-count"></span>
+      </div>
+      <table id="alerts-table">
+        <thead><tr>
+          <th>Time</th><th>Sev</th><th>Rule</th><th>Technique</th>
+          <th>Host</th><th>PID</th><th>Process</th><th>Dest</th><th>Risk</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="incident" class="view">
+      <div class="toolbar">
+        <input id="i-host" placeholder="host to reconstruct" />
+        <button id="i-load">Build chain</button>
+        <span class="muted">Newest at top · reads alert history for one host</span>
+      </div>
+      <div id="timeline" class="timeline"></div>
+    </section>
+
+    <section id="rules" class="view">
+      <div class="toolbar"><span class="muted" id="rules-meta"></span></div>
+      <table id="rules-table">
+        <thead><tr>
+          <th>ID</th><th>Name</th><th>Sev</th><th>Technique</th><th>Tactic</th><th>Risk</th><th>On</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer class="muted">
+    ARGUS console · read-only · enforcement and fleet are off by default
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

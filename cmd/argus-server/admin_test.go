@@ -15,7 +15,7 @@ import (
 	"github.com/argus-edr/argus/server/store"
 )
 
-func testAdmin(t *testing.T, token string) http.Handler {
+func testAdminAPI(t *testing.T, token string) *adminAPI {
 	t.Helper()
 	dir := t.TempDir()
 	rule := "- id: R-T\n  severity: low\n  match: {field: event.action, op: eq, value: exec}\n"
@@ -27,7 +27,12 @@ func testAdmin(t *testing.T, token string) http.Handler {
 		t.Fatalf("ruleset: %v", err)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return newAdminAPI(store.NewMemory(), rules, time.Minute, token, logger).mux()
+	return newAdminAPI(store.NewMemory(), rules, time.Minute, token, logger)
+}
+
+func testAdmin(t *testing.T, token string) http.Handler {
+	t.Helper()
+	return testAdminAPI(t, token).mux()
 }
 
 func postCommand(handler http.Handler, auth string) *httptest.ResponseRecorder {
