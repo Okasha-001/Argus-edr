@@ -1,0 +1,59 @@
+# Collection detections (ATT&CK TA0009).
+
+- id: R-0029
+  name: Archive staged for collection
+  description: A process archived a sensitive tree (/etc, /home, /root, /var/www) — data bundled for exfiltration.
+  severity: medium
+  risk_score: 40
+  technique:
+    id: T1560.001
+    name: "Archive Collected Data: Archive via Utility"
+    tactic: collection
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.name, op: in, value: [tar, zip, gzip, bzip2, xz, 7z, 7za] }
+      - { field: process.command_line, op: regex, value: '/etc|/home|/root|/var/www|/var/lib' }
+
+- id: R-0030
+  name: Private key or secret harvesting
+  description: A process searched for SSH keys, cloud credentials or private keys in files.
+  severity: high
+  risk_score: 45
+  technique:
+    id: T1552.001
+    name: "Unsecured Credentials: Credentials In Files"
+    tactic: credential-access
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: 'id_rsa|id_ed25519|\.aws/credentials|\.ssh/|BEGIN (RSA|OPENSSH|EC|DSA) PRIVATE KEY|\.pem\b' }
+
+- id: R-0031
+  name: Data staged in a temporary directory
+  description: A process copied or moved files into /tmp or /dev/shm — local staging before exfiltration.
+  severity: medium
+  risk_score: 30
+  technique:
+    id: T1074.001
+    name: "Data Staged: Local Data Staging"
+    tactic: collection
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.name, op: in, value: [cp, mv, rsync, dd] }
+      - { field: process.command_line, op: regex, value: '\s(/tmp/|/dev/shm/|/var/tmp/)' }
+
+- id: R-0032
+  name: Local file encryption with openssl/gpg
+  description: A process symmetrically encrypted files with openssl or gpg — staging stolen data or pre-ransom packaging.
+  severity: medium
+  risk_score: 35
+  technique:
+    id: T1560
+    name: Archive Collected Data
+    tactic: collection
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: 'openssl\s+enc\b|gpg\s+(-c|--symmetric)' }

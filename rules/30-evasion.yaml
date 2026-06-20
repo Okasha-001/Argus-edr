@@ -41,3 +41,45 @@
     all:
       - { field: event.type, op: in, value: [unlink, rename] }
       - { field: file.path, op: endswith, value: ".bash_history" }
+
+- id: R-0067
+  name: Security tooling disabled
+  description: A process disabled SELinux/AppArmor enforcement or flushed the firewall — impairing host defences.
+  severity: high
+  risk_score: 50
+  technique:
+    id: T1562.001
+    name: "Impair Defenses: Disable or Modify Tools"
+    tactic: defense-evasion
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: 'setenforce\s+0|ufw\s+disable|iptables\s+-F|nft\s+flush\s+ruleset|aa-disable|systemctl\s+stop\s+(auditd|apparmor|firewalld)' }
+
+- id: R-0068
+  name: System log cleared
+  description: A process truncated or vacuumed the system logs — indicator removal beyond a single file.
+  severity: high
+  risk_score: 45
+  technique:
+    id: T1070.002
+    name: "Indicator Removal: Clear Linux or Mac System Logs"
+    tactic: defense-evasion
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: 'journalctl\s+--vacuum|truncate\s+-s\s*0\s+/var/log|>\s*/var/log/\S|\bshred\b.*/var/log' }
+
+- id: R-0069
+  name: Base64-decoded command piped to a shell
+  description: A process decoded base64 and piped the result to a shell — obfuscated payload execution.
+  severity: high
+  risk_score: 50
+  technique:
+    id: T1140
+    name: Deobfuscate/Decode Files or Information
+    tactic: defense-evasion
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: 'base64\s+(-d|--decode|-di).*\|\s*(ba)?sh\b|echo\s+\S+\s*\|\s*base64\s+-d' }

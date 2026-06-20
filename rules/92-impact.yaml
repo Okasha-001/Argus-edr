@@ -1,0 +1,101 @@
+# Impact detections (ATT&CK TA0040).
+
+- id: R-0036
+  name: Ransomware file-extension rename
+  description: A file was renamed to a known ransomware extension (.locked, .encrypted, .crypt, ...). At scale this is encryption for impact.
+  severity: critical
+  risk_score: 70
+  technique:
+    id: T1486
+    name: Data Encrypted for Impact
+    tactic: impact
+  match:
+    all:
+      - { field: event.type, op: eq, value: rename }
+      - { field: file.target, op: regex, value: '\.(locked|encrypted|crypt|crypted|enc|crinf|R5A|XRNT|XTBL|cerber|locky|wannacry|wcry|kraken|abc)$' }
+
+- id: R-0037
+  name: Inhibit system recovery
+  description: A process deleted backups, snapshots or logical volumes used for recovery.
+  severity: critical
+  risk_score: 65
+  technique:
+    id: T1490
+    name: Inhibit System Recovery
+    tactic: impact
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: 'lvremove|vgremove|btrfs\s+subvolume\s+delete|rm\s+-rf?\s+/var/backups|timeshift\s+--delete|snapper\s+delete' }
+
+- id: R-0038
+  name: Security or logging service stopped
+  description: A process stopped or disabled a security/audit/firewall service — clearing the path for impact.
+  severity: high
+  risk_score: 50
+  technique:
+    id: T1489
+    name: Service Stop
+    tactic: impact
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: 'systemctl\s+(stop|disable|mask)\s+(auditd|firewalld|apparmor|falco|ufw|rsyslog|sshd)|service\s+\S+\s+stop' }
+
+- id: R-0039
+  name: Destructive file wipe
+  description: A process attempted bulk destruction with rm -rf at a dangerous root, shred, or zero-fill.
+  severity: critical
+  risk_score: 70
+  technique:
+    id: T1485
+    name: Data Destruction
+    tactic: impact
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: 'rm\s+-rf?\s+(--no-preserve-root\s+)?/($|\s|\*|etc|home|var|boot|usr)|\bshred\b|dd\s+if=/dev/(zero|urandom)\s+of=/dev/' }
+
+- id: R-0040
+  name: Cryptocurrency miner activity
+  description: A known miner ran or a process connected to a stratum mining pool — resource hijacking.
+  severity: high
+  risk_score: 55
+  technique:
+    id: T1496
+    name: Resource Hijacking
+    tactic: impact
+  match:
+    any:
+      - all:
+          - { field: event.type, op: eq, value: exec }
+          - { field: process.name, op: in, value: [xmrig, minerd, cpuminer, cgminer, ccminer, nbminer, ethminer] }
+      - { field: process.command_line, op: regex, value: 'stratum\+(tcp|ssl)://|--donate-level|pool\.(minexmr|supportxmr|nanopool)' }
+
+- id: R-0041
+  name: System shutdown or reboot
+  description: A process initiated a shutdown, reboot or halt — denial of availability when unexpected.
+  severity: low
+  risk_score: 25
+  technique:
+    id: T1529
+    name: System Shutdown/Reboot
+    tactic: impact
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: '\b(shutdown|reboot|halt|poweroff)\b|systemctl\s+(poweroff|reboot|halt)|init\s+0|init\s+6' }
+
+- id: R-0042
+  name: Disk wipe via filesystem tooling
+  description: A process ran wipefs or mkfs against a block device — disk structure wipe.
+  severity: critical
+  risk_score: 70
+  technique:
+    id: T1561.002
+    name: "Disk Wipe: Disk Structure Wipe"
+    tactic: impact
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: '\bwipefs\b|mkfs(\.\w+)?\s+/dev/|\bsgdisk\s+(-Z|--zap)' }

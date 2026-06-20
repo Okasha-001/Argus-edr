@@ -31,3 +31,65 @@
     all:
       - { field: event.type, op: eq, value: dns }
       - { field: dns.question.name, op: regex, value: '[A-Za-z0-9+/=_-]{50,}' }
+
+- id: R-0043
+  name: Pipe-to-shell ingress tool transfer
+  description: A process downloaded and executed a payload in one step (curl ... | bash) — the classic dropper one-liner.
+  severity: critical
+  risk_score: 60
+  technique:
+    id: T1105
+    name: Ingress Tool Transfer
+    tactic: command-and-control
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: '(curl|wget|fetch)\s[^|]*\|\s*(ba)?sh\b' }
+
+- id: R-0044
+  name: Scripting-language reverse shell
+  description: An interpreter spawned a network socket wired to a shell — a Python/Perl/Ruby/PHP reverse shell one-liner.
+  severity: critical
+  risk_score: 60
+  response: kill
+  technique:
+    id: T1059
+    name: Command and Scripting Interpreter
+    tactic: command-and-control
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: 'socket\.socket.*(connect|SOCK_STREAM)|pty\.spawn|fsockopen|/inet/tcp/|sh\s+-i\b.*(2>&1|>&)' }
+
+- id: R-0045
+  name: SSH or tooling protocol tunnel
+  description: A process opened an SSH port-forward/dynamic tunnel or ran ngrok/chisel — tunnelling traffic past network controls.
+  severity: high
+  risk_score: 45
+  technique:
+    id: T1572
+    name: Protocol Tunneling
+    tactic: command-and-control
+  match:
+    any:
+      - { field: process.command_line, op: regex, value: 'ssh\s+.*-[RLD]\s*\d|ssh\s+.*-[RLD]\s+\d' }
+      - all:
+          - { field: event.type, op: eq, value: exec }
+          - { field: process.name, op: in, value: [ngrok, chisel, frpc, gost, iodine] }
+
+- id: R-0046
+  name: Proxy or traffic relay tool
+  description: A process used proxychains or set up a socat relay/listener — relaying traffic to mask its origin.
+  severity: medium
+  risk_score: 35
+  technique:
+    id: T1090
+    name: Proxy
+    tactic: command-and-control
+  match:
+    any:
+      - all:
+          - { field: event.type, op: eq, value: exec }
+          - { field: process.name, op: in, value: [proxychains, proxychains4, redsocks] }
+      - { field: process.command_line, op: regex, value: 'socat\s+.*(LISTEN|fork).*(TCP|EXEC)' }
+

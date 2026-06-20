@@ -1,0 +1,62 @@
+# Lateral movement detections (ATT&CK TA0008).
+#
+# A single host sees the *outbound* leg of a pivot: a shell or service process
+# reaching out over SSH/SCP/WinRM, or pushing tools to another host. Fleet-wide
+# lateral movement is also correlated server-side (server/correlate).
+
+- id: R-0025
+  name: SSH pivot from a non-interactive process
+  description: A service or shell process spawned ssh/sftp to reach another host — a hands-on-keyboard pivot rather than a user session.
+  severity: medium
+  risk_score: 40
+  technique:
+    id: T1021.004
+    name: "Remote Services: SSH"
+    tactic: lateral-movement
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.name, op: in, value: [ssh, sftp] }
+      - { field: process.parent.name, op: in, value: [sh, bash, dash, nginx, apache2, httpd, php-fpm, python, python3, perl, node] }
+
+- id: R-0026
+  name: Automated SSH with host-key checking disabled
+  description: An ssh invocation disabled StrictHostKeyChecking or used BatchMode — scripted, non-interactive lateral movement.
+  severity: high
+  risk_score: 45
+  technique:
+    id: T1021.004
+    name: "Remote Services: SSH"
+    tactic: lateral-movement
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: 'StrictHostKeyChecking=no|BatchMode=yes|UserKnownHostsFile=/dev/null' }
+
+- id: R-0027
+  name: Lateral tool transfer
+  description: A process copied files to a remote host with scp/rsync/sftp — staging tooling for the next hop.
+  severity: medium
+  risk_score: 35
+  technique:
+    id: T1570
+    name: Lateral Tool Transfer
+    tactic: lateral-movement
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: '\bscp\s+.+@|rsync\s+.+::?|rsync\s+.+@' }
+
+- id: R-0028
+  name: Connection to a remote-administration service
+  description: An outbound connection to an SSH/RDP/WinRM/VNC service port, the transport of most interactive lateral movement.
+  severity: low
+  risk_score: 25
+  technique:
+    id: T1021
+    name: Remote Services
+    tactic: lateral-movement
+  match:
+    all:
+      - { field: event.type, op: eq, value: connect }
+      - { field: destination.port, op: in, value: [22, 23, 3389, 5985, 5986, 5900] }

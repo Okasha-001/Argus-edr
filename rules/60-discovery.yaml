@@ -1,0 +1,118 @@
+# Discovery detections (ATT&CK TA0007).
+#
+# Individually these commands are benign — admins and scripts run them all day —
+# so they are low severity with a small risk_score. The signal is *volume*: a
+# process that runs many of them in one 30s window crosses the correlation
+# threshold and opens an incident (classic post-exploitation reconnaissance).
+
+- id: R-0017
+  name: System owner/user discovery
+  description: A process enumerated the current user or logged-in users (whoami, id, who, w).
+  severity: low
+  risk_score: 15
+  technique:
+    id: T1033
+    name: System Owner/User Discovery
+    tactic: discovery
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.name, op: in, value: [whoami, id, who, w, groups, logname] }
+
+- id: R-0018
+  name: System information discovery
+  description: A process queried OS, kernel or hardware details (uname, hostnamectl, lscpu, lsb_release).
+  severity: low
+  risk_score: 15
+  technique:
+    id: T1082
+    name: System Information Discovery
+    tactic: discovery
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.name, op: in, value: [uname, hostnamectl, lscpu, lsb_release, dmidecode] }
+
+- id: R-0019
+  name: SUID/SGID binary search
+  description: A process searched the filesystem for setuid/setgid binaries — a hallmark of privilege-escalation reconnaissance.
+  severity: medium
+  risk_score: 35
+  technique:
+    id: T1083
+    name: File and Directory Discovery
+    tactic: discovery
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: '-perm\s+(-|/)?[0246]?[0-7]?[0-7][0-7][0-7]|-perm\s+-u=s|-perm\s+/[0-7]*s' }
+
+- id: R-0020
+  name: Account discovery via passwd
+  description: A process read or enumerated local accounts (cat /etc/passwd, getent passwd).
+  severity: low
+  risk_score: 20
+  technique:
+    id: T1087.001
+    name: "Account Discovery: Local Account"
+    tactic: discovery
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: '/etc/passwd|getent\s+passwd' }
+
+- id: R-0021
+  name: Remote system discovery
+  description: A process enumerated reachable hosts (arp, ip neigh, ping sweep).
+  severity: low
+  risk_score: 15
+  technique:
+    id: T1018
+    name: Remote System Discovery
+    tactic: discovery
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: '\barp\b|ip\s+neigh|ip\s+n\b' }
+
+- id: R-0022
+  name: Network configuration discovery
+  description: A process inspected interfaces, routes or sockets (ifconfig, ip addr, netstat, ss, route).
+  severity: low
+  risk_score: 15
+  technique:
+    id: T1016
+    name: System Network Configuration Discovery
+    tactic: discovery
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: '\bifconfig\b|\bnetstat\b|\broute\b|ip\s+(a|addr|route|r)\b|\bss\s+-' }
+
+- id: R-0023
+  name: Process discovery
+  description: A process enumerated the running process list (ps aux, ps -ef).
+  severity: low
+  risk_score: 15
+  technique:
+    id: T1057
+    name: Process Discovery
+    tactic: discovery
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.command_line, op: regex, value: 'ps\s+(aux|-ef|-A|ax)' }
+
+- id: R-0024
+  name: Network service scanning
+  description: A process ran an active port/service scanner (nmap, masscan, zmap).
+  severity: high
+  risk_score: 45
+  technique:
+    id: T1046
+    name: Network Service Discovery
+    tactic: discovery
+  match:
+    all:
+      - { field: event.type, op: eq, value: exec }
+      - { field: process.name, op: in, value: [nmap, masscan, zmap, rustscan, naabu] }

