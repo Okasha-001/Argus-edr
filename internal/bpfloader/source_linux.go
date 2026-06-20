@@ -54,6 +54,7 @@ var sensorAttachments = []attachSpec{
 	{"handle_bpf", "tp", "syscalls", "sys_enter_bpf"},
 	{"handle_memfd", "tp", "syscalls", "sys_enter_memfd_create"},
 	{"handle_mmap_file", "kprobe", "", "security_mmap_file"},
+	{"handle_file_open", "kprobe", "", "security_file_open"},
 	{"handle_setuid", "tp", "syscalls", "sys_enter_setuid"},
 	{"handle_sendto", "tp", "syscalls", "sys_enter_sendto"},
 }

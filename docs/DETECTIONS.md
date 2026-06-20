@@ -30,10 +30,11 @@ enforcement is enabled). All others are alert-only by default.
 ## Telemetry caveats (be honest about live coverage)
 
 - **openat forwards writes/creates only.** To keep the ring buffer quiet, the
-  `sys_enter_openat` sensor drops read-only opens. So R-0002 (a *read* of
-  `/etc/shadow`) fires from replayed streams and from the BPF-LSM `file_open`
-  hook, but **not** from the openat firehose. Wiring `file_open` for targeted
-  read detection is tracked in the roadmap.
+  `sys_enter_openat` sensor drops read-only opens. Live reads of the credential
+  files are instead caught by the `security_file_open` sensor, which matches
+  `/etc/shadow` and `/etc/gshadow` at the kernel open chokepoint and feeds R-0002
+  — whose process allowlist suppresses the routine PAM/account-tool reads so only
+  unexpected readers alert. Any other read-only open is still seen only via replay.
 - **DNS names are captured from UDP `sendto` to port 53.** The sensor forwards
   the raw query bytes and the agent parses the name into `dns.question.name`
   (keeping the kernel side dumb). `sendmsg`-based, TCP and IPv6 resolvers are not

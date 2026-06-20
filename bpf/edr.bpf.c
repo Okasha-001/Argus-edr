@@ -264,6 +264,54 @@ int handle_fchmodat(struct trace_event_raw_sys_enter *ctx)
     return 0;
 }
 
+// True only for the basenames "shadow" and "gshadow" (exact, NUL-terminated).
+static __always_inline int is_shadow_basename(const char *base)
+{
+    if (base[0] == 's' && base[1] == 'h' && base[2] == 'a' && base[3] == 'd' &&
+        base[4] == 'o' && base[5] == 'w' && base[6] == 0)
+        return 1; // shadow
+    if (base[0] == 'g' && base[1] == 's' && base[2] == 'h' && base[3] == 'a' &&
+        base[4] == 'd' && base[5] == 'o' && base[6] == 'w' && base[7] == 0)
+        return 1; // gshadow
+    return 0;
+}
+
+// Targeted credential-read detection (T1003). The openat sensor forwards only
+// writes to keep the ring buffer quiet, so a *read* of /etc/shadow is invisible
+// there. security_file_open is the open chokepoint for every path regardless of
+// syscall; we match the credential files cheaply by basename + parent dir (no
+// full-path walk) and forward the canonical path as an open event, so the same
+// R-0002 rule fires on a live read. Detection only — a kprobe cannot deny; that
+// is Phase 6 (LSM file_open).
+SEC("kprobe/security_file_open")
+int BPF_KPROBE(handle_file_open, struct file *file)
+{
+    struct dentry *dentry = BPF_CORE_READ(file, f_path.dentry);
+    const unsigned char *name = BPF_CORE_READ(dentry, d_name.name);
+
+    char base[8] = {};
+    bpf_probe_read_kernel_str(base, sizeof(base), name);
+    if (!is_shadow_basename(base))
+        return 0;
+
+    char parent[4] = {};
+    bpf_probe_read_kernel_str(parent, sizeof(parent),
+                              BPF_CORE_READ(dentry, d_parent, d_name.name));
+    if (parent[0] != 'e' || parent[1] != 't' || parent[2] != 'c' || parent[3] != 0)
+        return 0; // matched a "shadow" file, but not under /etc
+
+    struct event *e = new_event(EVENT_OPEN);
+    if (!e)
+        return 0;
+
+    // Rebuild the canonical path from verified parts: parent is "etc", basename is
+    // shadow/gshadow. new_event zeroed filename, so the read NUL-terminates it.
+    __builtin_memcpy(e->filename, "/etc/", 5);
+    bpf_probe_read_kernel_str(&e->filename[5], sizeof(e->filename) - 5, name);
+    emit(e);
+    return 0;
+}
+
 static __always_inline void fill_socket(struct event *e, struct sock *sk)
 {
     __u16 family = BPF_CORE_READ(sk, __sk_common.skc_family);
