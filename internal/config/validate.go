@@ -7,6 +7,9 @@ var (
 	validSources   = map[string]bool{SourceEBPF: true, SourceReplay: true}
 	validModes     = map[string]bool{ModeOff: true, ModeDryRun: true, ModeEnforce: true}
 	validOutputs   = map[string]bool{"stdout": true, "file": true, "loki": true}
+
+	// modeRank orders the response postures so config can enforce mode <= max_mode.
+	modeRank = map[string]int{ModeOff: 0, ModeDryRun: 1, ModeEnforce: 2}
 )
 
 func (c Config) validate() error {
@@ -24,6 +27,12 @@ func (c Config) validate() error {
 	}
 	if !validModes[c.Response.Mode] {
 		return fmt.Errorf("response.mode %q invalid (want off|dry-run|enforce)", c.Response.Mode)
+	}
+	if !validModes[c.Response.MaxMode] {
+		return fmt.Errorf("response.max_mode %q invalid (want off|dry-run|enforce)", c.Response.MaxMode)
+	}
+	if modeRank[c.Response.Mode] > modeRank[c.Response.MaxMode] {
+		return fmt.Errorf("response.mode %q exceeds response.max_mode %q", c.Response.Mode, c.Response.MaxMode)
 	}
 	if c.Detection.Correlation.Enabled && c.Detection.Correlation.IncidentThreshold <= 0 {
 		return fmt.Errorf("detection.correlation.incident_threshold must be positive")

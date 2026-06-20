@@ -19,6 +19,12 @@ const (
 	KindC2FanIn         = "c2-fanin"
 )
 
+// maxTrackedKeys caps the number of distinct keys held per index. Destination
+// IPs are attacker-controlled, so without a ceiling a host that fans out to many
+// unique addresses could grow the maps without bound. When the cap is hit we
+// sweep expired keys first, and only stop tracking new keys if still full.
+const maxTrackedKeys = 100_000
+
 // Signal is a fleet-wide finding raised when a key is seen on enough distinct
 // hosts within the window.
 type Signal struct {
@@ -38,6 +44,7 @@ type CrossHost struct {
 	mu          sync.Mutex
 	byTechnique map[string]*hostWindow
 	byDest      map[string]*hostWindow
+	lastSweep   time.Time
 	clock       func() time.Time
 }
 
@@ -67,6 +74,8 @@ func (c *CrossHost) Observe(record store.AlertRecord) []Signal {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	c.sweepExpired(now)
+
 	var signals []Signal
 	if record.TechniqueID != "" {
 		if signal := c.track(c.byTechnique, record.TechniqueID, record.Hostname, now, KindLateralMovement); signal != nil {
@@ -84,6 +93,14 @@ func (c *CrossHost) Observe(record store.AlertRecord) []Signal {
 func (c *CrossHost) track(index map[string]*hostWindow, key, host string, now time.Time, kind string) *Signal {
 	window, ok := index[key]
 	if !ok || now.Sub(window.first) > c.window {
+		if !ok && len(index) >= maxTrackedKeys {
+			// At the ceiling: try reclaiming space, then refuse new keys rather
+			// than grow without bound under an indicator-flood.
+			c.sweep(index, now)
+			if len(index) >= maxTrackedKeys {
+				return nil
+			}
+		}
 		window = &hostWindow{hosts: make(map[string]time.Time), first: now}
 		index[key] = window
 	}
@@ -115,6 +132,28 @@ func summarize(kind, key string, hosts []string) string {
 		return fmt.Sprintf("%d hosts contacted %s: %s", len(hosts), key, joined)
 	default:
 		return key
+	}
+}
+
+// sweepExpired reclaims fully-expired keys from both indexes, at most once per
+// window so the cost is amortized. Without it, keys (notably attacker-controlled
+// destination IPs) would accumulate for the process's lifetime.
+func (c *CrossHost) sweepExpired(now time.Time) {
+	if !c.lastSweep.IsZero() && now.Sub(c.lastSweep) < c.window {
+		return
+	}
+	c.sweep(c.byTechnique, now)
+	c.sweep(c.byDest, now)
+	c.lastSweep = now
+}
+
+// sweep drops keys from one index whose hosts have all aged out of the window.
+func (c *CrossHost) sweep(index map[string]*hostWindow, now time.Time) {
+	for key, window := range index {
+		pruneExpired(window.hosts, now, c.window)
+		if len(window.hosts) == 0 {
+			delete(index, key)
+		}
 	}
 }
 

@@ -1,6 +1,7 @@
 package correlate
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -31,6 +32,26 @@ func TestLateralMovementFiresOnceAtThreshold(t *testing.T) {
 	// A third host on the same technique must not re-fire the same signal.
 	if signals := cross.Observe(alert("app-01", "T1059", "", now)); len(signals) != 0 {
 		t.Errorf("signal should fire once per window, got %+v", signals)
+	}
+}
+
+// TestExpiredKeysAreEvicted guards against the unbounded-growth DoS: keys whose
+// hosts have all aged out of the window must be reclaimed, not retained forever.
+func TestExpiredKeysAreEvicted(t *testing.T) {
+	cross := NewCrossHost(time.Minute, 5) // high threshold: nothing fires, isolate eviction
+	base := time.Unix(1000, 0)
+
+	for i := 0; i < 50; i++ {
+		cross.Observe(alert("web-01", "", fmt.Sprintf("203.0.113.%d", i), base))
+	}
+	if len(cross.byDest) != 50 {
+		t.Fatalf("expected 50 tracked destination keys, got %d", len(cross.byDest))
+	}
+
+	// A later observation (past the window) must trigger a sweep of the stale keys.
+	cross.Observe(alert("web-01", "", "198.51.100.1", base.Add(2*time.Minute)))
+	if len(cross.byDest) != 1 {
+		t.Errorf("stale keys not reclaimed: %d keys remain, want only the fresh one", len(cross.byDest))
 	}
 }
 

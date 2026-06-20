@@ -39,6 +39,7 @@ func runServe(args []string) error {
 	certDir := flags.String("cert-dir", "fleet-certs", "directory --dev writes generated certs to")
 	dnsName := flags.String("dns", "argus-server", "server certificate DNS name when generating dev certs")
 	token := flags.String("token", os.Getenv("ARGUS_ENROLLMENT_TOKEN"), "required enrollment token (empty = open enrollment)")
+	adminToken := flags.String("admin-token", os.Getenv("ARGUS_ADMIN_TOKEN"), "bearer token for admin command/reload endpoints (empty = those endpoints are refused)")
 	ttl := flags.Duration("heartbeat-ttl", 90*time.Second, "treat an agent offline after this long without a heartbeat")
 	window := flags.Duration("correlate-window", 5*time.Minute, "cross-host correlation window")
 	minHosts := flags.Int("correlate-min-hosts", 3, "distinct hosts before a cross-host signal fires")
@@ -63,10 +64,13 @@ func runServe(args []string) error {
 
 	memStore := store.NewMemory()
 	correlator := correlate.NewCrossHost(*window, *minHosts)
-	admin := newAdminAPI(memStore, rules, *ttl)
+	admin := newAdminAPI(memStore, rules, *ttl, *adminToken, logger)
 	reloadOnHangup(rules, logger)
 	if *token == "" {
 		logger.Warn("open enrollment: no --token set, any agent with a valid client certificate can enroll")
+	}
+	if *adminToken == "" {
+		logger.Warn("admin command endpoints disabled: no --admin-token set (kill/quarantine/reload will be refused)")
 	}
 
 	service := api.New(api.Deps{

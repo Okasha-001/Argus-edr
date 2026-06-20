@@ -100,7 +100,7 @@ func TestBlockSurfacesRunnerError(t *testing.T) {
 }
 
 func blockingResponder(mode Mode, runner *recordingRunner) *Responder {
-	responder := New(mode, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	responder := New(mode, ModeEnforce, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	responder.blocker = newNetworkBlocker(runner.run)
 	return responder
 }

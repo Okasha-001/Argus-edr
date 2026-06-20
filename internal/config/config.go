@@ -69,7 +69,12 @@ type Correlation struct {
 }
 
 type Response struct {
-	Mode           string   `yaml:"mode"`
+	Mode string `yaml:"mode"`
+	// MaxMode is the highest posture the control plane may set on this agent. It
+	// defaults to Mode, so out of the box a remote SET_RESPONSE_MODE can only
+	// lower the posture, never raise it past what the operator pinned locally.
+	// Raising it (e.g. mode: dry-run, max_mode: enforce) is an explicit opt-in.
+	MaxMode        string   `yaml:"max_mode"`
 	AllowlistPaths []string `yaml:"allowlist_paths"`
 }
 
@@ -155,6 +160,9 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.Agent.Hostname == "" {
 		cfg.Agent.Hostname = detectHostname()
+	}
+	if cfg.Response.MaxMode == "" {
+		cfg.Response.MaxMode = cfg.Response.Mode
 	}
 	if err := cfg.validate(); err != nil {
 		return Config{}, err

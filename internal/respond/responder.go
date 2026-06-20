@@ -17,29 +17,37 @@ type killFunc func(pid uint32, comm string) error
 
 // Responder carries out (or, in dry-run, only records) the response to an alert.
 // The mode is held atomically so the control plane can change the posture at
-// runtime while the pipeline is handling alerts.
+// runtime while the pipeline is handling alerts. maxMode is an immutable local
+// ceiling: the control plane can lower the posture but never raise it past what
+// the operator pinned, so a compromised or rogue server cannot turn enforcement
+// on against a host configured to stay observe-only.
 type Responder struct {
 	mode      atomic.Int32
+	maxMode   Mode
 	allowlist map[string]bool
 	logger    *slog.Logger
 	kill      killFunc
 	blocker   *networkBlocker
 }
 
-// New builds a responder. allowlistPaths name executables that must never be
-// killed or blocked, so a misfire cannot take down the host's own plumbing.
-func New(mode Mode, allowlistPaths []string, logger *slog.Logger) *Responder {
+// New builds a responder. mode is the starting posture and maxMode the highest
+// posture any runtime change (including a control-plane command) may reach; the
+// starting posture is clamped to it. allowlistPaths name executables that must
+// never be killed or blocked, so a misfire cannot take down the host's own
+// plumbing.
+func New(mode, maxMode Mode, allowlistPaths []string, logger *slog.Logger) *Responder {
 	allowlist := make(map[string]bool, len(allowlistPaths))
 	for _, path := range allowlistPaths {
 		allowlist[path] = true
 	}
 	responder := &Responder{
+		maxMode:   maxMode,
 		allowlist: allowlist,
 		logger:    logger,
 		kill:      guardedKill,
 		blocker:   newNetworkBlocker(execCommand),
 	}
-	responder.mode.Store(int32(mode))
+	responder.mode.Store(int32(clampMode(mode, maxMode)))
 	return responder
 }
 
@@ -49,11 +57,26 @@ func (r *Responder) Mode() Mode {
 }
 
 // SetMode changes the response posture at runtime, the effect of a control-plane
-// SET_RESPONSE_MODE command. It is safe to call while Handle runs.
-func (r *Responder) SetMode(mode Mode) {
+// SET_RESPONSE_MODE command. The request is clamped to the local ceiling, so a
+// remote command can lower the posture but never escalate past max_mode. It is
+// safe to call while Handle runs.
+func (r *Responder) SetMode(requested Mode) {
+	mode := clampMode(requested, r.maxMode)
+	if mode != requested {
+		r.logger.Warn("response mode change clamped to local ceiling",
+			"requested", requested, "ceiling", r.maxMode)
+	}
 	if previous := Mode(r.mode.Swap(int32(mode))); previous != mode {
 		r.logger.Warn("response mode changed", "from", previous, "to", mode)
 	}
+}
+
+// clampMode caps a requested posture at the configured ceiling.
+func clampMode(requested, ceiling Mode) Mode {
+	if requested > ceiling {
+		return ceiling
+	}
+	return requested
 }
 
 // Handle decides and applies the response for one alert, annotating the alert

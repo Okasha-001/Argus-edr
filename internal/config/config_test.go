@@ -43,6 +43,23 @@ func TestLoadRejectsInvalidMode(t *testing.T) {
 	}
 }
 
+func TestMaxModeDefaultsToMode(t *testing.T) {
+	cfg, err := Load(writeConfig(t, "response:\n  mode: dry-run\n"))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Response.MaxMode != ModeDryRun {
+		t.Errorf("max_mode = %q, want it defaulted to mode (dry-run)", cfg.Response.MaxMode)
+	}
+}
+
+func TestLoadRejectsModeAboveMaxMode(t *testing.T) {
+	path := writeConfig(t, "response:\n  mode: enforce\n  max_mode: dry-run\n")
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected an error when mode exceeds max_mode")
+	}
+}
+
 func TestModeValue(t *testing.T) {
 	for mode, want := range map[string]uint32{ModeOff: 0, ModeDryRun: 1, ModeEnforce: 2} {
 		if got := (Response{Mode: mode}).ModeValue(); got != want {

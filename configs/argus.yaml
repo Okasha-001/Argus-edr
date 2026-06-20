@@ -40,6 +40,11 @@ intel:
 
 response:
   mode: "off"         # off | dry-run | enforce
+  # Highest posture the control plane may set on this agent. Defaults to `mode`,
+  # so a remote SET_RESPONSE_MODE can only LOWER the posture, never raise it past
+  # what you pin here. Set it above `mode` (e.g. mode: dry-run, max_mode: enforce)
+  # only if you want to allow the fleet to escalate this host remotely.
+  max_mode: ""        # off | dry-run | enforce (empty = same as mode)
   # Processes that must never be killed/blocked, even on a match. The agent
   # protects you from locking yourself out of the host.
   allowlist_paths:

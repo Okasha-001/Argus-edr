@@ -48,7 +48,12 @@ func runAgent(args []string) error {
 	if matcher != nil {
 		engine.SetIntel(matcher)
 	}
-	responder := respond.New(respond.ParseMode(cfg.Response.Mode), cfg.Response.AllowlistPaths, logger)
+	responder := respond.New(
+		respond.ParseMode(cfg.Response.Mode),
+		respond.ParseMode(cfg.Response.MaxMode),
+		cfg.Response.AllowlistPaths,
+		logger,
+	)
 
 	sink, fleet, err := buildSink(cfg, logger)
 	if err != nil {

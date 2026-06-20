@@ -44,9 +44,17 @@ client is `internal/fleet`.
 - **Enrollment token.** `argus-server serve --token <secret>` (or
   `ARGUS_ENROLLMENT_TOKEN`) requires every `Enroll` to present a matching token.
   Empty means open enrollment — development only; the server warns at startup.
-- **The admin API is not mutually authenticated.** It binds to `127.0.0.1:8080`
-  by default and must stay behind localhost or an authenticating proxy. It is for
-  operators, never agents.
+- **The admin API binds to `127.0.0.1:8080`** by default and must stay behind
+  localhost or an authenticating proxy — it is for operators, never agents. Its
+  **state-changing endpoints (command enqueue, rule reload) require a bearer
+  token**: `argus-server serve --admin-token <secret>` (or `ARGUS_ADMIN_TOKEN`),
+  presented as `Authorization: Bearer <secret>`. With no token configured those
+  endpoints are **refused** (`503`), so there is never an unauthenticated path to
+  kill or quarantine a host; read-only endpoints stay open for local dashboards.
+  Every command and reload is written to the audit log with its source address.
+- **Response actions honour the agent's `max_mode` ceiling.** A pushed
+  `SET_RESPONSE_MODE`/`KILL`/`QUARANTINE` can never enforce on a host whose local
+  `response.max_mode` forbids it (see `docs/SAFETY.md`).
 - **Per-agent certificates in production.** `gen-certs` mints one shared dev
   certificate for convenience. A real fleet issues a distinct client certificate
   per host from a managed CA so certificates can be revoked individually.
@@ -100,10 +108,10 @@ argus-server gen-certs --dir ./fleet-certs --dns argus-server
 argus-server serve \
   --ca ./fleet-certs/ca.pem \
   --cert ./fleet-certs/server.pem --key ./fleet-certs/server-key.pem \
-  --rules ./rules --token s3cr3t
+  --rules ./rules --token s3cr3t --admin-token adm1n
 
 #    …or skip steps 1–2 with ephemeral certs:
-#    argus-server serve --dev --rules ./rules --token s3cr3t
+#    argus-server serve --dev --rules ./rules --token s3cr3t --admin-token adm1n
 
 # 3. Point an agent at it (configs/argus.yaml → fleet:), then run the agent.
 argus run --config /etc/argus/config.yaml
@@ -113,8 +121,9 @@ curl -s 127.0.0.1:8080/api/agents  | jq
 curl -s 127.0.0.1:8080/api/alerts  | jq
 curl -s 127.0.0.1:8080/api/signals | jq
 
-# 5. Push a command (e.g. switch one agent to dry-run).
+# 5. Push a command (e.g. switch one agent to dry-run). Needs the admin token.
 curl -X POST 127.0.0.1:8080/api/agents/<id>/commands \
+  -H 'Authorization: Bearer adm1n' \
   -d '{"kind":"SET_RESPONSE_MODE","argument":"dry-run"}'
 ```
 

@@ -18,6 +18,17 @@ response or touching `internal/respond` or `bpf/edr_lsm.bpf.c`.
 Always run a new rule in `dry-run` first and confirm it only fires on real
 threats before promoting it to `enforce`.
 
+### The `max_mode` ceiling
+
+When the agent is fleet-managed, the control plane can change the posture at
+runtime (`SET_RESPONSE_MODE`). `response.max_mode` is a **local, immutable
+ceiling** on that: a remote command may *lower* the posture but never raise it
+past `max_mode`. It defaults to `response.mode`, so by default the fleet cannot
+turn enforcement on against a host you pinned to `off` or `dry-run`. Allowing
+remote escalation is an explicit opt-in (`mode: dry-run`, `max_mode: enforce`).
+This keeps the off-by-default guarantee true at runtime, not just at startup —
+even a compromised server cannot escalate a host past its ceiling.
+
 ## Guardrails
 
 - **Critical-path allowlist.** `response.allowlist_paths` lists executables that
