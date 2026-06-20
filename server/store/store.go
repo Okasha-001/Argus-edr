@@ -11,10 +11,15 @@ import (
 
 // Agent is one enrolled host as the control plane knows it.
 type Agent struct {
-	ID              string
-	Hostname        string
-	Version         string
-	Kernel          string
+	ID       string
+	Hostname string
+	Version  string
+	Kernel   string
+	// CertFingerprint is the SHA-256 of the client certificate presented at
+	// enrollment. Every later request from this agent must present the same
+	// certificate, which stops one valid fleet cert from impersonating another
+	// agent. Empty only for agents enrolled without mTLS (in-process tests).
+	CertFingerprint string
 	FirstSeen       time.Time
 	LastSeen        time.Time
 	EventsProcessed uint64
@@ -63,7 +68,7 @@ type Command struct {
 
 // Store is the control plane's state backend.
 type Store interface {
-	Enroll(hostname, version, kernel string) Agent
+	Enroll(hostname, version, kernel, certFingerprint string) Agent
 	Heartbeat(agentID string, stats Stats) (Agent, bool)
 	Get(agentID string) (Agent, bool)
 	List() []Agent

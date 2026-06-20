@@ -26,15 +26,16 @@ func NewMemory() *Memory {
 	}
 }
 
-func (m *Memory) Enroll(hostname, version, kernel string) Agent {
+func (m *Memory) Enroll(hostname, version, kernel, certFingerprint string) Agent {
 	now := m.clock()
 	agent := Agent{
-		ID:        NewID(),
-		Hostname:  hostname,
-		Version:   version,
-		Kernel:    kernel,
-		FirstSeen: now,
-		LastSeen:  now,
+		ID:              NewID(),
+		Hostname:        hostname,
+		Version:         version,
+		Kernel:          kernel,
+		CertFingerprint: certFingerprint,
+		FirstSeen:       now,
+		LastSeen:        now,
 	}
 	m.mu.Lock()
 	m.agents[agent.ID] = agent

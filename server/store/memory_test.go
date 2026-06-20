@@ -7,7 +7,7 @@ import (
 
 func TestEnrollAndGet(t *testing.T) {
 	store := NewMemory()
-	agent := store.Enroll("web-01", "1.0", "6.8.0")
+	agent := store.Enroll("web-01", "1.0", "6.8.0", "fp-web-01")
 	if agent.ID == "" {
 		t.Fatal("enroll returned an empty id")
 	}
@@ -22,7 +22,7 @@ func TestEnrollAndGet(t *testing.T) {
 
 func TestHeartbeatUpdatesStats(t *testing.T) {
 	store := NewMemory()
-	agent := store.Enroll("web-01", "1.0", "6.8.0")
+	agent := store.Enroll("web-01", "1.0", "6.8.0", "fp-web-01")
 
 	updated, ok := store.Heartbeat(agent.ID, Stats{EventsProcessed: 42, Alerts: 3, RulesVersion: "abc"})
 	if !ok {
@@ -49,7 +49,7 @@ func TestOnline(t *testing.T) {
 
 func TestCommandQueue(t *testing.T) {
 	store := NewMemory()
-	agent := store.Enroll("web-01", "1.0", "6.8.0")
+	agent := store.Enroll("web-01", "1.0", "6.8.0", "fp-web-01")
 
 	if store.EnqueueCommand("unknown", Command{Kind: "UPDATE_RULES"}) {
 		t.Error("queueing for an unknown agent should fail")

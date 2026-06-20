@@ -84,11 +84,28 @@ func (s *Service) Enroll(ctx context.Context, req *fleetpb.EnrollRequest) (*flee
 	if req.GetHostname() == "" {
 		return nil, status.Error(codes.InvalidArgument, "hostname is required")
 	}
-	agent := s.store.Enroll(req.GetHostname(), req.GetAgentVersion(), req.GetKernel())
+	agent := s.store.Enroll(req.GetHostname(), req.GetAgentVersion(), req.GetKernel(), peerFingerprint(ctx))
 	s.logger.Info("agent enrolled",
 		"agent", agent.ID, "host", agent.Hostname, "version", agent.Version,
 		"kernel", agent.Kernel, "peer", peerCommonName(ctx))
 	return &fleetpb.EnrollResponse{AgentId: agent.ID, RulesVersion: s.rules.Version()}, nil
+}
+
+// authorizeIdentity confirms the request's agent id is enrolled and that the
+// calling certificate is the one it enrolled with. This is what stops any holder
+// of a valid fleet certificate from acting as another agent — impersonating it on
+// heartbeats, draining its command queue, or filing alerts under its name.
+func (s *Service) authorizeIdentity(agentID, fingerprint string) (store.Agent, error) {
+	agent, ok := s.store.Get(agentID)
+	if !ok {
+		return store.Agent{}, status.Errorf(codes.NotFound, "unknown agent %q: re-enroll", agentID)
+	}
+	if agent.CertFingerprint != "" && agent.CertFingerprint != fingerprint {
+		s.logger.Warn("agent identity mismatch: certificate does not match the enrolled agent",
+			"agent", agentID, "host", agent.Hostname)
+		return store.Agent{}, status.Error(codes.PermissionDenied, "client certificate does not match the enrolled agent")
+	}
+	return agent, nil
 }
 
 // Heartbeat records the agent's liveness and counters and returns any queued
@@ -96,6 +113,9 @@ func (s *Service) Enroll(ctx context.Context, req *fleetpb.EnrollRequest) (*flee
 // command carrying the current version, so a drifted agent always re-syncs even
 // if no operator queued anything.
 func (s *Service) Heartbeat(ctx context.Context, req *fleetpb.HeartbeatRequest) (*fleetpb.HeartbeatResponse, error) {
+	if _, err := s.authorizeIdentity(req.GetAgentId(), peerFingerprint(ctx)); err != nil {
+		return nil, err
+	}
 	stats := store.Stats{
 		EventsProcessed: req.GetEventsProcessed(),
 		Alerts:          req.GetAlerts(),
@@ -118,6 +138,8 @@ func (s *Service) Heartbeat(ctx context.Context, req *fleetpb.HeartbeatRequest) 
 // each and folding it into cross-host correlation. It acks the count when the
 // agent closes the stream.
 func (s *Service) ReportAlerts(stream grpc.ClientStreamingServer[fleetpb.AlertReport, fleetpb.ReportAck]) error {
+	fingerprint := peerFingerprint(stream.Context())
+	var authorizedAgent string
 	var received uint64
 	for {
 		report, err := stream.Recv()
@@ -126,6 +148,17 @@ func (s *Service) ReportAlerts(stream grpc.ClientStreamingServer[fleetpb.AlertRe
 		}
 		if err != nil {
 			return err
+		}
+		// A stream belongs to one agent: authorize the first report's id against
+		// the calling certificate, then require every report to carry that id, so
+		// alerts cannot be filed under another agent's name.
+		if authorizedAgent == "" {
+			if _, err := s.authorizeIdentity(report.GetAgentId(), fingerprint); err != nil {
+				return err
+			}
+			authorizedAgent = report.GetAgentId()
+		} else if report.GetAgentId() != authorizedAgent {
+			return status.Error(codes.PermissionDenied, "all alerts in a stream must come from the enrolled agent")
 		}
 		record := recordFromReport(report)
 		s.store.RecordAlert(record)

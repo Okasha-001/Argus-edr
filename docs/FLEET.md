@@ -55,9 +55,18 @@ client is `internal/fleet`.
 - **Response actions honour the agent's `max_mode` ceiling.** A pushed
   `SET_RESPONSE_MODE`/`KILL`/`QUARANTINE` can never enforce on a host whose local
   `response.max_mode` forbids it (see `docs/SAFETY.md`).
-- **Per-agent certificates in production.** `gen-certs` mints one shared dev
-  certificate for convenience. A real fleet issues a distinct client certificate
-  per host from a managed CA so certificates can be revoked individually.
+- **Each agent is bound to its certificate.** At enrollment the server records
+  the SHA-256 of the agent's client certificate; every later heartbeat, alert
+  report and command drain must present that same certificate, or the request is
+  rejected with `PermissionDenied`. This stops one valid fleet certificate from
+  impersonating another agent (spoofing heartbeats, stealing its commands, or
+  filing alerts under its name).
+- **Per-agent certificates in production.** Because identity is pinned per
+  certificate, give each host its own. `gen-certs --agents web-01,db-01` mints a
+  distinct certificate per host (and still writes a shared `agent.pem` for demos);
+  a real fleet issues them from a managed CA so each can be revoked individually.
+  The shared dev certificate makes every agent share one identity, so the binding
+  only distinguishes hosts once they have per-agent certificates.
 
 ## Rule distribution
 

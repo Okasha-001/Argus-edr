@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 
 	"github.com/argus-edr/argus/internal/fleet"
 	"github.com/argus-edr/argus/internal/fleet/fleetpb"
@@ -51,6 +53,7 @@ const ruleB = `- id: R-9002
 type harness struct {
 	addr     string
 	certDir  string
+	certs    *fleet.DevCerts
 	provider *ruleset.Provider
 	store    store.Store
 	signals  func() []correlate.Signal
@@ -109,6 +112,7 @@ func startServer(t *testing.T, token string) *harness {
 	return &harness{
 		addr:     listener.Addr().String(),
 		certDir:  dir,
+		certs:    certs,
 		provider: provider,
 		store:    memStore,
 		signals: func() []correlate.Signal {
@@ -137,6 +141,92 @@ func (h *harness) dial(t *testing.T, hostname, token string) *fleet.Client {
 	}
 	t.Cleanup(func() { _ = client.Close() })
 	return client
+}
+
+// dialWith connects using a caller-supplied client certificate instead of the
+// shared dev cert, so a test can present a distinct identity to the server.
+func (h *harness) dialWith(t *testing.T, hostname string, cert fleet.PEMPair) *fleet.Client {
+	t.Helper()
+	dir := t.TempDir()
+	writeFiles(t, dir, map[string]string{
+		"ca.pem":        string(h.certs.CA.Cert),
+		"agent.pem":     string(cert.Cert),
+		"agent-key.pem": string(cert.Key),
+	})
+	client, err := fleet.Dial(fleet.ClientConfig{
+		ServerAddress: h.addr, ServerName: "argus-server",
+		CAFile:   filepath.Join(dir, "ca.pem"),
+		CertFile: filepath.Join(dir, "agent.pem"),
+		KeyFile:  filepath.Join(dir, "agent-key.pem"),
+		Hostname: hostname, AgentVersion: "test", Kernel: "6.8.0",
+	})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	return client
+}
+
+func TestHeartbeatRejectsImpersonationByAnotherCert(t *testing.T) {
+	h := startServer(t, "")
+	ctx := context.Background()
+
+	// Agent A enrolls with the shared dev cert.
+	victim := h.dial(t, "web-01", "")
+	victimEnroll, err := victim.Enroll(ctx)
+	if err != nil {
+		t.Fatalf("enroll victim: %v", err)
+	}
+
+	// A different host with its own certificate (distinct key => distinct identity).
+	attackerCert, err := fleet.GenerateAgentCert("attacker", h.certs.CA.Cert, h.certs.CA.Key)
+	if err != nil {
+		t.Fatalf("mint attacker cert: %v", err)
+	}
+	attacker := h.dialWith(t, "attacker-01", attackerCert)
+	if _, err := attacker.Enroll(ctx); err != nil {
+		t.Fatalf("enroll attacker: %v", err)
+	}
+
+	// The attacker's cert is CA-valid, but it must not be able to heartbeat as the
+	// victim agent.
+	_, err = attacker.Heartbeat(ctx, victimEnroll.AgentID, fleet.Stats{})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("impersonation not blocked: err = %v, want PermissionDenied", err)
+	}
+
+	// The victim, presenting its own cert, still works.
+	if _, err := victim.Heartbeat(ctx, victimEnroll.AgentID, fleet.Stats{RulesVersion: h.provider.Version()}); err != nil {
+		t.Fatalf("legitimate heartbeat failed: %v", err)
+	}
+}
+
+func TestReportRejectsImpersonationByAnotherCert(t *testing.T) {
+	h := startServer(t, "")
+	ctx := context.Background()
+
+	victim := h.dial(t, "web-01", "")
+	victimEnroll, err := victim.Enroll(ctx)
+	if err != nil {
+		t.Fatalf("enroll victim: %v", err)
+	}
+
+	attackerCert, err := fleet.GenerateAgentCert("attacker", h.certs.CA.Cert, h.certs.CA.Key)
+	if err != nil {
+		t.Fatalf("mint attacker cert: %v", err)
+	}
+	attacker := h.dialWith(t, "attacker-01", attackerCert)
+	if _, err := attacker.Enroll(ctx); err != nil {
+		t.Fatalf("enroll attacker: %v", err)
+	}
+
+	// Filing alerts under the victim's id with the attacker's cert is refused.
+	_, err = attacker.Report(ctx, &fleetpb.AlertReport{
+		AgentId: victimEnroll.AgentID, Hostname: "web-01", TechniqueId: "T1059", RuleId: "R-9001",
+	})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("alert impersonation not blocked: err = %v, want PermissionDenied", err)
+	}
 }
 
 func TestEnrollRejectsBadToken(t *testing.T) {

@@ -58,6 +58,38 @@ func GenerateDevCerts(serverDNS string) (*DevCerts, error) {
 	}, nil
 }
 
+// GenerateAgentCert mints a client certificate with the given common name,
+// signed by the provided CA (PEM cert + key). Production fleets call this to
+// issue a distinct certificate per host, so the control plane can bind each
+// agent's identity to its certificate and revoke hosts individually.
+func GenerateAgentCert(commonName string, caCertPEM, caKeyPEM []byte) (PEMPair, error) {
+	caCert, caKey, err := parseCA(caCertPEM, caKeyPEM)
+	if err != nil {
+		return PEMPair{}, err
+	}
+	return generateLeaf(commonName, caCert, caKey, nil, nil, x509.ExtKeyUsageClientAuth)
+}
+
+func parseCA(caCertPEM, caKeyPEM []byte) (*x509.Certificate, *ecdsa.PrivateKey, error) {
+	certBlock, _ := pem.Decode(caCertPEM)
+	if certBlock == nil {
+		return nil, nil, fmt.Errorf("decode CA certificate PEM")
+	}
+	caCert, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse CA certificate: %w", err)
+	}
+	keyBlock, _ := pem.Decode(caKeyPEM)
+	if keyBlock == nil {
+		return nil, nil, fmt.Errorf("decode CA key PEM")
+	}
+	caKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse CA key: %w", err)
+	}
+	return caCert, caKey, nil
+}
+
 // WriteDevCerts writes the certificates to dir: ca.pem, server.pem/server-key.pem,
 // agent.pem/agent-key.pem. Keys are written 0600.
 func WriteDevCerts(dir string, certs *DevCerts) error {
