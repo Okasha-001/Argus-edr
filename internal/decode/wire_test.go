@@ -208,3 +208,30 @@ func TestDecodeDNSRejectsMalformedQuery(t *testing.T) {
 		t.Errorf("domain = %q, want empty for a malformed query", event.Network.Domain)
 	}
 }
+
+func TestDecodeTamperCarriesActorAndSignal(t *testing.T) {
+	raw := make([]byte, WireSize)
+	order := binary.NativeEndian
+	order.PutUint32(raw[offType:], uint32(model.EventTamper))
+	order.PutUint32(raw[offPID:], 6606)       // the actor attacking the agent
+	copy(raw[offComm:], "killer\x00")         // its comm
+	order.PutUint16(raw[offFmode:], 9)        // SIGKILL
+	order.PutUint32(raw[offRet:], ^uint32(0)) // -EPERM, i.e. the attempt was denied
+
+	event, err := (&Decoder{}).Decode(raw)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if event.Action != "tamper" {
+		t.Errorf("action = %q, want tamper", event.Action)
+	}
+	if event.Process.PID != 6606 || event.Process.Name != "killer" {
+		t.Errorf("actor = pid %d %q, want 6606 killer", event.Process.PID, event.Process.Name)
+	}
+	if event.Syscall.Request != 9 {
+		t.Errorf("syscall.request = %d, want 9 (SIGKILL)", event.Syscall.Request)
+	}
+	if event.Ret != -1 {
+		t.Errorf("ret = %d, want -1 (denied)", event.Ret)
+	}
+}

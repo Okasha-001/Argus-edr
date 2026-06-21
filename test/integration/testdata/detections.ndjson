@@ -34,3 +34,4 @@
 {"@timestamp":"2026-06-21T09:00:33Z","host":"web-01","action":"exec","process":{"pid":5050,"ppid":1,"name":"cat","executable":"/usr/bin/cat","command_line":"cat /etc/shadow"}}
 {"@timestamp":"2026-06-21T09:00:34Z","host":"web-01","action":"exec","process":{"pid":5051,"ppid":1,"name":"hydra","executable":"/usr/bin/hydra","command_line":"hydra -l root -P rockyou.txt ssh://10.0.0.9"}}
 {"@timestamp":"2026-06-21T09:00:35Z","host":"web-01","action":"exec","process":{"pid":5052,"ppid":1,"name":"gcore","executable":"/usr/bin/gcore","command_line":"gcore -o /tmp/dump 1234"}}
+{"@timestamp":"2026-06-21T09:00:36Z","host":"web-01","action":"tamper","process":{"pid":5053,"ppid":1,"name":"killer"},"syscall":{"request":9}}

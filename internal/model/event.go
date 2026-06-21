@@ -29,6 +29,7 @@ const (
 	EventMmapExec    EventType = 15
 	EventPrivChange  EventType = 16
 	EventDNS         EventType = 17
+	EventTamper      EventType = 18
 )
 
 var eventActions = map[EventType]string{
@@ -49,6 +50,7 @@ var eventActions = map[EventType]string{
 	EventMmapExec:    "mmap_exec",
 	EventPrivChange:  "setuid",
 	EventDNS:         "dns",
+	EventTamper:      "tamper",
 }
 
 var actionTypes = func() map[string]EventType {

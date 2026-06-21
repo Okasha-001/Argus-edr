@@ -16,6 +16,9 @@ BPF_DIR   := bpf
 VMLINUX   := $(BPF_DIR)/vmlinux.h
 BPF_SRCS  := $(wildcard $(BPF_DIR)/*.bpf.c)
 BPF_OBJS  := $(patsubst $(BPF_DIR)/%.bpf.c,$(BUILD_DIR)/%.bpf.o,$(BPF_SRCS))
+# The ABI (common.h) and shared bpf headers are prerequisites of every object, so
+# a struct change rebuilds both the sensor and the LSM object — never just one.
+BPF_HEADERS := $(filter-out $(VMLINUX),$(wildcard $(BPF_DIR)/*.h $(BPF_DIR)/headers/*.h))
 
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 PKG      := github.com/argus-edr/argus/internal/version
@@ -42,7 +45,7 @@ $(VMLINUX):
 ## bpf: compile the eBPF sensors into CO-RE objects (needs clang + BTF)
 .PHONY: bpf
 bpf: $(BPF_OBJS)
-$(BUILD_DIR)/%.bpf.o: $(BPF_DIR)/%.bpf.c $(VMLINUX)
+$(BUILD_DIR)/%.bpf.o: $(BPF_DIR)/%.bpf.c $(VMLINUX) $(BPF_HEADERS)
 	@mkdir -p $(BUILD_DIR)
 	$(CLANG) $(BPF_CFLAGS) -c $< -o $@
 	@$(STRIP) -g $@ 2>/dev/null || true

@@ -134,6 +134,10 @@ func (d *Decoder) applyTypeSpecific(event *model.Event, raw []byte) {
 			DstPort: order.Uint16(raw[offDport:]),
 			Domain:  parseDNSName(raw[offDomain : offDomain+domainLen]),
 		}
+	case model.EventTamper:
+		// fmode = the signal or ptrace mode the actor attempted; ret carries the
+		// deny decision (see bpf/common.h). The actor is process.{pid,name}.
+		event.Syscall = model.Syscall{Request: int64(mode)}
 	}
 }
 

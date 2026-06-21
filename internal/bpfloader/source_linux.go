@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 	"time"
 
@@ -58,6 +59,11 @@ var sensorAttachments = []attachSpec{
 	{"handle_setuid", "tp", "syscalls", "sys_enter_setuid"},
 	{"handle_sendto", "tp", "syscalls", "sys_enter_sendto"},
 }
+
+// lsmPrograms names the enforcement programs in the LSM object, attached together
+// when an object is present. Each is gated by the shared enforce_config mode, so
+// listing one here never turns it on — that still takes response.mode.
+var lsmPrograms = []string{"bprm_check", "task_kill"}
 
 // EBPFSource loads the objects and feeds decoded events into the pipeline.
 type EBPFSource struct {
@@ -153,17 +159,21 @@ func (s *EBPFSource) loadEnforcement() {
 	if err := coll.Maps["enforce_config"].Put(uint32(0), s.opts.EnforceMode); err != nil {
 		s.logger.Warn("set enforcement mode failed", "err", err)
 	}
-	program, ok := coll.Programs["bprm_check"]
-	if !ok {
-		s.logger.Warn("enforcement program bprm_check missing")
-		return
+	s.armSelfProtection(coll)
+
+	for _, name := range lsmPrograms {
+		program, ok := coll.Programs[name]
+		if !ok {
+			continue // an older object may not carry every enforcement hook
+		}
+		lnk, err := link.AttachLSM(link.LSMOptions{Program: program})
+		if err != nil {
+			s.logger.Warn("attach LSM failed (is BPF LSM enabled in lsm= boot param?)",
+				"program", name, "err", err)
+			continue
+		}
+		s.links = append(s.links, lnk)
 	}
-	lnk, err := link.AttachLSM(link.LSMOptions{Program: program})
-	if err != nil {
-		s.logger.Warn("attach LSM failed (is BPF LSM enabled in lsm= boot param?)", "err", err)
-		return
-	}
-	s.links = append(s.links, lnk)
 
 	reader, err := ringbuf.NewReader(coll.Maps["enforce_events"])
 	if err != nil {
@@ -172,6 +182,20 @@ func (s *EBPFSource) loadEnforcement() {
 	}
 	s.readers = append(s.readers, reader)
 	s.logger.Info("enforcement loaded", "mode", s.opts.EnforceMode)
+}
+
+// armSelfProtection tells the self-protection hooks which pid is the agent's, so
+// task_kill (and the ptrace hook) can recognise an attempt against ARGUS itself.
+// A missing map means an older enforcement object without the feature — the hooks
+// simply stay inert, never failing the load.
+func (s *EBPFSource) armSelfProtection(coll *ebpf.Collection) {
+	guard, ok := coll.Maps["protected_pid"]
+	if !ok {
+		return
+	}
+	if err := guard.Put(uint32(0), uint32(os.Getpid())); err != nil {
+		s.logger.Warn("arm self-protection failed", "err", err)
+	}
 }
 
 func (s *EBPFSource) consume(ctx context.Context, reader *ringbuf.Reader, out chan<- *model.Event) {

@@ -38,6 +38,7 @@ enum event_type {
     EVENT_MMAP_EXEC    = 15, /* RWX mmap/mprotect — shellcode (T1055)           */
     EVENT_PRIV_CHANGE  = 16, /* setuid/setgid — privilege change (T1548)        */
     EVENT_DNS          = 17, /* DNS query (raw query bytes; T1071.004)          */
+    EVENT_TAMPER       = 18, /* self-protection tripwire — kill/ptrace vs agent */
 };
 
 /*
@@ -48,6 +49,8 @@ enum event_type {
  *   memfd       : filename = memfd name, fmode = flags
  *   mmap_exec   : fmode = prot flags
  *   priv_change : ret = requested uid
+ *   tamper      : comm/pid = the actor attacking the agent, fmode = signal or
+ *                 ptrace mode, ret = -EPERM when the attempt was denied else 0
  */
 
 struct event {

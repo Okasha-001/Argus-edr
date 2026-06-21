@@ -83,3 +83,16 @@
     all:
       - { field: event.type, op: eq, value: exec }
       - { field: process.command_line, op: regex, value: 'base64\s+(-d|--decode|-di).*\|\s*(ba)?sh\b|echo\s+\S+\s*\|\s*base64\s+-d' }
+
+- id: R-0074
+  name: Tamper attempt against the ARGUS agent
+  description: A process tried to kill, stop, or trace the ARGUS agent itself — an attempt to blind endpoint monitoring. Emitted by the self-protection LSM hooks.
+  severity: critical
+  risk_score: 85
+  technique:
+    id: T1562.001
+    name: "Impair Defenses: Disable or Modify Tools"
+    tactic: defense-evasion
+  match:
+    all:
+      - { field: event.type, op: eq, value: tamper }
