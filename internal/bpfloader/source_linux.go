@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"sync"
@@ -76,10 +77,12 @@ type EBPFSource struct {
 	decoder *decode.Decoder
 	logger  *slog.Logger
 
-	colls   []*ebpf.Collection
-	links   []link.Link
-	readers []*ringbuf.Reader
-	dropMap *ebpf.Map // per-CPU ring-drop counter, read for the loss metric
+	colls    []*ebpf.Collection
+	links    []link.Link
+	readers  []*ringbuf.Reader
+	dropMap  *ebpf.Map                // per-CPU ring-drop counter, read for the loss metric
+	programs map[string]*ebpf.Program // attached sensor programs, for per-program cost
+	stats    io.Closer                // kernel run-time stats collection, while open
 
 	closeOnce sync.Once
 }
@@ -130,6 +133,7 @@ func (s *EBPFSource) loadSensors() error {
 	}
 	s.colls = append(s.colls, coll)
 
+	s.programs = make(map[string]*ebpf.Program)
 	for _, spec := range sensorAttachments {
 		program, ok := coll.Programs[spec.program]
 		if !ok {
@@ -142,7 +146,9 @@ func (s *EBPFSource) loadSensors() error {
 			continue
 		}
 		s.links = append(s.links, lnk)
+		s.programs[spec.program] = program
 	}
+	s.enableRuntimeStats()
 
 	reader, err := ringbuf.NewReader(coll.Maps["events"])
 	if err != nil {
@@ -170,6 +176,32 @@ func (s *EBPFSource) RingDrops() uint64 {
 		total += count
 	}
 	return total
+}
+
+// enableRuntimeStats turns on the kernel's per-program run-time accounting so
+// ProgramStats can report each sensor's cost. It needs CAP_SYS_ADMIN and is
+// best-effort: without it the cost metric simply reads zero.
+func (s *EBPFSource) enableRuntimeStats() {
+	closer, err := ebpf.EnableStats(uint32(unix.BPF_STATS_RUN_TIME))
+	if err != nil {
+		s.logger.Warn("per-program runtime stats disabled (needs CAP_SYS_ADMIN)", "err", err)
+		return
+	}
+	s.stats = closer
+}
+
+// ProgramStats reports the cumulative runtime and run count of each attached
+// sensor program. Values are zero unless runtime stats were enabled at load.
+func (s *EBPFSource) ProgramStats() []ProgramStat {
+	stats := make([]ProgramStat, 0, len(s.programs))
+	for name, program := range s.programs {
+		info, err := program.Stats()
+		if err != nil {
+			continue
+		}
+		stats = append(stats, ProgramStat{Name: name, Runtime: info.Runtime, RunCount: info.RunCount})
+	}
+	return stats
 }
 
 // loadEnforcement is best-effort: enforcement needs CONFIG_BPF_LSM and "bpf" in
@@ -269,6 +301,9 @@ func (s *EBPFSource) consume(ctx context.Context, reader *ringbuf.Reader, out ch
 func (s *EBPFSource) Close() error {
 	s.closeOnce.Do(func() {
 		s.closeReaders()
+		if s.stats != nil {
+			_ = s.stats.Close()
+		}
 		for _, lnk := range s.links {
 			_ = lnk.Close()
 		}

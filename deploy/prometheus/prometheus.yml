@@ -1,0 +1,15 @@
+# Prometheus scrape config for the ARGUS demo stack. It scrapes the agent's
+# metrics endpoint (config metrics.address, default 9464) and the control plane's
+# admin API (default 8080) via host.docker.internal, so a Prometheus running in
+# this compose can reach an agent/server running on the host. Adjust the targets
+# for a real fleet (one entry per host, or a service-discovery block).
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: argus-agent
+    static_configs:
+      - targets: ["host.docker.internal:9464"]
+  - job_name: argus-server
+    static_configs:
+      - targets: ["host.docker.internal:8080"]

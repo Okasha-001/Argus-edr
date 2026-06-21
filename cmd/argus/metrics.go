@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/argus-edr/argus/internal/bpfloader"
 	"github.com/argus-edr/argus/internal/config"
 	"github.com/argus-edr/argus/internal/metrics"
 	"github.com/argus-edr/argus/internal/pipeline"
@@ -38,10 +39,12 @@ func (m *agentMetrics) ObserveStage(stage string, elapsed time.Duration) {
 // observability owns the agent's metrics registry, the /metrics HTTP server, and
 // the goroutine that samples kernel-side counters (ring-buffer loss).
 type observability struct {
-	agent     *agentMetrics
-	ringDrops *metrics.Gauge
-	server    *http.Server
-	logger    *slog.Logger
+	agent       *agentMetrics
+	ringDrops   *metrics.Gauge
+	progRuntime *metrics.CounterVec
+	progRuns    *metrics.CounterVec
+	server      *http.Server
+	logger      *slog.Logger
 }
 
 // buildObservability constructs the registry and HTTP server, or returns nil when
@@ -62,6 +65,10 @@ func buildObservability(cfg config.Config, logger *slog.Logger) *observability {
 		},
 		ringDrops: registry.Gauge("argus_ring_drops_total",
 			"Events the kernel dropped because the ring buffer was full."),
+		progRuntime: registry.CounterVec("argus_program_runtime_ns_total",
+			"Cumulative eBPF program runtime in nanoseconds, by program.", "program"),
+		progRuns: registry.CounterVec("argus_program_runs_total",
+			"eBPF program executions, by program.", "program"),
 		logger: logger,
 	}
 	routes := http.NewServeMux()
@@ -104,12 +111,16 @@ func (o *observability) serve(ctx context.Context) {
 	}
 }
 
-// ringDropReader is the optional capability a source exposes to report kernel
-// ring-buffer loss; the live eBPF source has it, the replay source does not.
-type ringDropReader interface{ RingDrops() uint64 }
+// kernelCounters is the optional capability the live eBPF source exposes for
+// kernel-side telemetry — ring-buffer loss and per-program cost. The replay
+// source does not implement it, so the sampler simply does nothing there.
+type kernelCounters interface {
+	RingDrops() uint64
+	ProgramStats() []bpfloader.ProgramStat
+}
 
 func (o *observability) sample(ctx context.Context, source pipeline.Source) {
-	reader, ok := source.(ringDropReader)
+	counters, ok := source.(kernelCounters)
 	if !ok {
 		return
 	}
@@ -120,7 +131,17 @@ func (o *observability) sample(ctx context.Context, source pipeline.Source) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			o.ringDrops.Set(float64(reader.RingDrops()))
+			o.refresh(counters)
 		}
+	}
+}
+
+// refresh mirrors the kernel counters into the registry. Runtime and run-count
+// are cumulative kernel totals, so they are Set (read whole) rather than added.
+func (o *observability) refresh(counters kernelCounters) {
+	o.ringDrops.Set(float64(counters.RingDrops()))
+	for _, stat := range counters.ProgramStats() {
+		o.progRuntime.WithLabelValue(stat.Name).Set(uint64(stat.Runtime.Nanoseconds()))
+		o.progRuns.WithLabelValue(stat.Name).Set(stat.RunCount)
 	}
 }

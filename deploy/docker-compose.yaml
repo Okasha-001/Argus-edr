@@ -1,8 +1,10 @@
-# Local observability stack for the ARGUS demo: Loki for events/alerts and
-# Grafana with the dashboard and datasource pre-provisioned.
+# Local observability stack for the ARGUS demo: Loki for events/alerts,
+# Prometheus for the /metrics endpoints, and Grafana with both dashboards and
+# datasources pre-provisioned.
 #
 #   docker compose -f deploy/docker-compose.yaml up -d
 #   # point an output at http://localhost:3100/loki/api/v1/push, open :3000
+#   # enable metrics.enabled in the agent and run argus-server, then open :9090
 services:
   loki:
     image: grafana/loki:3.0.0
@@ -12,10 +14,21 @@ services:
     volumes:
       - ./loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
 
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    command: --config.file=/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # scrape an agent/server on the host
+
   grafana:
     image: grafana/grafana:11.1.0
     depends_on:
       - loki
+      - prometheus
     ports:
       - "3000:3000"
     environment:

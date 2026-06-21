@@ -102,3 +102,10 @@ fleet:
   # key_file: /etc/argus/fleet/agent-key.pem
   # enrollment_token: ""                     # shared secret required to enroll
   # heartbeat_seconds: 30
+
+# Prometheus metrics endpoint. Off by default (it opens a port); bound to
+# localhost when on. Exposes event/alert counters, per-stage pipeline latency,
+# per-program eBPF cost, and ring-buffer loss. See docs/PERFORMANCE.md.
+metrics:
+  enabled: false
+  address: 127.0.0.1:9464

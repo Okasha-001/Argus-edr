@@ -38,6 +38,33 @@ detection, so detection dominates cost — which is where added rules show up.
   reported here rather than estimated — no invented numbers.
 - Reproduce: `make bench`. The figures will vary with CPU, kernel and rule set.
 
+## Live metrics (Prometheus)
+
+Both binaries expose a Prometheus endpoint so the hot path can be watched in
+production, not just measured in a benchmark.
+
+- **Agent** (`metrics.enabled: true`, default `127.0.0.1:9464`): `GET /metrics`
+  serves `argus_events_total`, `argus_alerts_total`, `argus_incidents_total`, the
+  per-stage latency histogram `argus_pipeline_stage_seconds{stage=…}`
+  (enrich/score/detect/respond/output), per-program eBPF cost
+  `argus_program_runtime_ns_total{program=…}` / `argus_program_runs_total`, and —
+  closing the long-open event-loss gap — `argus_ring_drops_total`, the kernel's
+  count of events dropped when the ring buffer was full.
+- **Control plane**: `GET /metrics` on the admin API serves
+  `argus_server_alerts_total`, `argus_server_signals_total`, and the
+  `argus_server_agents` gauge.
+
+The exposition is hand-rolled (`internal/metrics`) — no client library, in
+keeping with the project's minimal-dependency stance. `deploy/` ships a
+Prometheus scrape config, a Grafana datasource, and an *ARGUS — Metrics*
+dashboard (events/sec, alert rate, stage p95 latency, per-program cost, ring
+drops, fleet size); bring them up with
+`docker compose -f deploy/docker-compose.yaml up -d`.
+
+Per-program cost needs `CAP_SYS_ADMIN` (the agent enables BPF run-time stats at
+load); without it the cost series simply read zero. `argus_ring_drops_total`
+rising under load is the signal to raise `input.ring_buffer_bytes`.
+
 ## Robustness (fuzzing)
 
 The parsers that consume untrusted input are fuzzed with Go's native fuzzer

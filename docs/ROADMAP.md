@@ -47,8 +47,11 @@ line count; the phases add real capability, not padding.
   container escape (T1611).
 - **Detection:** done — 56 rules across the full ATT&CK kill chain plus a pure-Go
   YARA engine (`yara.matched` / R-0073); see `docs/ATTACK_COVERAGE.md`. Next:
-  deeper cross-event correlation and ring-buffer-loss / per-program runtime
-  metrics (the latter is Phase 7 observability).
+  deeper cross-event correlation.
+- **Observability:** done — a dependency-free Prometheus `/metrics` on the agent
+  and control plane (events/alerts, per-stage latency, per-program eBPF cost,
+  ring-buffer loss, fleet size), with a Grafana dashboard in `deploy/`. See
+  `docs/PERFORMANCE.md`.
 - **Response:** graduated response (alert→throttle→block→kill) and egress
   block/quarantine already done; tc-based traffic shaping next.
 - **Hardening:** documented end-to-end host-overhead % under a live, rooted
