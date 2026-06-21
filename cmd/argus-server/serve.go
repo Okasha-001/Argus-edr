@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -45,6 +46,8 @@ func runServe(args []string) error {
 	token := flags.String("token", os.Getenv("ARGUS_ENROLLMENT_TOKEN"), "required enrollment token (empty = open enrollment)")
 	adminToken := flags.String("admin-token", os.Getenv("ARGUS_ADMIN_TOKEN"), "bearer token granting admin on the command/reload endpoints (empty = refused unless --rbac-file is set)")
 	rbacFile := flags.String("rbac-file", os.Getenv("ARGUS_RBAC_FILE"), "YAML of token/role grants (viewer|operator|admin) for finer admin authorization")
+	auditFile := flags.String("audit-log", os.Getenv("ARGUS_AUDIT_LOG"), "append admin actions to this file as a tamper-evident hash chain")
+	auditKey := flags.String("audit-key", os.Getenv("ARGUS_AUDIT_KEY"), "HMAC key that signs audit entries (empty = hash chain only)")
 	storeKind := flags.String("store", store.BackendMemory, "state backend: memory (ephemeral) or sqlite (durable)")
 	dsn := flags.String("dsn", "", "data source for --store sqlite (database file path)")
 	ttl := flags.Duration("heartbeat-ttl", 90*time.Second, "treat an agent offline after this long without a heartbeat")
@@ -82,6 +85,15 @@ func runServe(args []string) error {
 	}
 	correlator := correlate.NewCrossHost(*window, *minHosts)
 	admin := newAdminAPI(backing, rules, *ttl, rbac, logger)
+	if *auditFile != "" {
+		sink, err := os.OpenFile(*auditFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		if err != nil {
+			return fmt.Errorf("open audit log: %w", err)
+		}
+		defer sink.Close()
+		admin.audit = newAuditLog(sink, []byte(*auditKey), logger)
+		logger.Info("admin audit log", "file", *auditFile, "signed", *auditKey != "")
+	}
 	reloadOnHangup(rules, logger)
 	if *token == "" {
 		logger.Warn("open enrollment: no --token set, any agent with a valid client certificate can enroll")

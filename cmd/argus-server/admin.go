@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -35,6 +36,7 @@ type adminAPI struct {
 
 	stream  *broadcaster
 	metrics *serverMetrics
+	audit   *auditLog
 
 	mu      sync.Mutex
 	signals []correlate.Signal
@@ -44,6 +46,7 @@ func newAdminAPI(backing store.Store, rules *ruleset.Provider, ttl time.Duration
 	return &adminAPI{
 		store: backing, rules: rules, ttl: ttl, authz: rbac, logger: logger,
 		stream: newBroadcaster(), metrics: newServerMetrics(backing),
+		audit: newAuditLog(nil, nil, logger), // serve.go upgrades this to a signed, file-backed log
 	}
 }
 
@@ -120,7 +123,7 @@ func (a *adminAPI) handleReloadRules(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "reload failed: "+err.Error())
 		return
 	}
-	a.logger.Info("admin audit", "action", "rules_reload", "from", r.RemoteAddr, "version", a.rules.Version())
+	a.audit.record(roleFromContext(r.Context()).String(), "rules_reload", a.rules.Version(), r.RemoteAddr)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "reloaded", "version": a.rules.Version()})
 }
 
@@ -246,9 +249,9 @@ func (a *adminAPI) handleEnqueueCommand(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	// Audit every queued command: these reach an agent as kill/quarantine/posture
-	// changes, so who-asked-for-what must be on the record.
-	a.logger.Info("admin audit", "action", "enqueue_command",
-		"from", r.RemoteAddr, "agent", agentID, "kind", req.Kind, "argument", req.Argument)
+	// changes, so who-asked-for-what must be on the tamper-evident record.
+	a.audit.record(roleFromContext(r.Context()).String(), "enqueue_command",
+		agentID, fmt.Sprintf("%s %s from %s", req.Kind, req.Argument, r.RemoteAddr))
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued", "agent": agentID, "kind": req.Kind})
 }
 
