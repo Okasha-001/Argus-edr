@@ -78,6 +78,11 @@ type Response struct {
 	// Raising it (e.g. mode: dry-run, max_mode: enforce) is an explicit opt-in.
 	MaxMode        string   `yaml:"max_mode"`
 	AllowlistPaths []string `yaml:"allowlist_paths"`
+	// CredReaderAllowlist names the process comms permitted to read the shadow
+	// password files when the file_open enforcement hook is active. The auth stack
+	// (sshd, login, su, ...) must stay listed or enforce mode would break local
+	// logins. Comms are matched exactly as the kernel reports them (≤15 chars).
+	CredReaderAllowlist []string `yaml:"cred_reader_allowlist"`
 }
 
 type Output struct {
@@ -163,6 +168,14 @@ func Defaults() Config {
 		Response: Response{
 			Mode:           ModeOff,
 			AllowlistPaths: []string{"/usr/lib/systemd/systemd", "/usr/sbin/sshd"},
+			// The auth stack that legitimately reads the shadow files. Operators
+			// should run dry-run first to discover any reader specific to their
+			// host (PAM modules, display managers) before enabling enforce.
+			CredReaderAllowlist: []string{
+				"sshd", "login", "su", "sudo", "passwd", "chpasswd", "unix_chkpwd",
+				"systemd-logind", "agetty", "gdm-session-wor", "polkitd", "useradd",
+				"usermod", "gpasswd", "chage",
+			},
 		},
 		Outputs: []Output{{Type: "stdout", Format: "ecs"}},
 		Fleet:   Fleet{Enabled: false, HeartbeatSeconds: defaultHeartbeatSeconds},

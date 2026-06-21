@@ -172,6 +172,7 @@ func buildSource(cfg config.Config, logger *slog.Logger) pipeline.Source {
 		LSMObjectPath: enforcementObject(cfg),
 		Hostname:      cfg.Agent.Hostname,
 		EnforceMode:   cfg.Response.ModeValue(),
+		CredReaders:   cfg.Response.CredReaderAllowlist,
 		Logger:        logger,
 	})
 }

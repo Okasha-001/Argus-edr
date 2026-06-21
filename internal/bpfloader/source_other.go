@@ -19,6 +19,7 @@ type Options struct {
 	LSMObjectPath string
 	Hostname      string
 	EnforceMode   uint32
+	CredReaders   []string
 	Logger        *slog.Logger
 }
 

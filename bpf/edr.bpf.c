@@ -11,6 +11,7 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_endian.h>
 #include "common.h"
+#include "credfile.h"
 
 // GPL is required to call the bpf helpers we rely on (ringbuf, probe_read, ...).
 char LICENSE[] SEC("license") = "GPL";
@@ -261,18 +262,6 @@ int handle_fchmodat(struct trace_event_raw_sys_enter *ctx)
     e->fmode = (__u16)ctx->args[2];
 
     emit(e);
-    return 0;
-}
-
-// True only for the basenames "shadow" and "gshadow" (exact, NUL-terminated).
-static __always_inline int is_shadow_basename(const char *base)
-{
-    if (base[0] == 's' && base[1] == 'h' && base[2] == 'a' && base[3] == 'd' &&
-        base[4] == 'o' && base[5] == 'w' && base[6] == 0)
-        return 1; // shadow
-    if (base[0] == 'g' && base[1] == 's' && base[2] == 'h' && base[3] == 'a' &&
-        base[4] == 'd' && base[5] == 'o' && base[6] == 'w' && base[7] == 0)
-        return 1; // gshadow
     return 0;
 }
 

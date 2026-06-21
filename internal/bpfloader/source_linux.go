@@ -28,7 +28,8 @@ type Options struct {
 	ObjectPath    string // compiled sensor object (edr.bpf.o)
 	LSMObjectPath string // optional enforcement object (edr_lsm.bpf.o)
 	Hostname      string
-	EnforceMode   uint32 // 0 off, 1 dry-run, 2 enforce
+	EnforceMode   uint32   // 0 off, 1 dry-run, 2 enforce
+	CredReaders   []string // process comms exempt from the file_open credential guard
 	Logger        *slog.Logger
 }
 
@@ -60,10 +61,14 @@ var sensorAttachments = []attachSpec{
 	{"handle_sendto", "tp", "syscalls", "sys_enter_sendto"},
 }
 
+// taskCommLen mirrors TASK_COMM_LEN in bpf/common.h: the fixed width of a comm
+// as the kernel stores it, and the key width of the cred_readers map.
+const taskCommLen = 16
+
 // lsmPrograms names the enforcement programs in the LSM object, attached together
 // when an object is present. Each is gated by the shared enforce_config mode, so
 // listing one here never turns it on — that still takes response.mode.
-var lsmPrograms = []string{"bprm_check", "task_kill", "ptrace_guard"}
+var lsmPrograms = []string{"bprm_check", "task_kill", "ptrace_guard", "file_open_guard"}
 
 // EBPFSource loads the objects and feeds decoded events into the pipeline.
 type EBPFSource struct {
@@ -160,6 +165,7 @@ func (s *EBPFSource) loadEnforcement() {
 		s.logger.Warn("set enforcement mode failed", "err", err)
 	}
 	s.armSelfProtection(coll)
+	s.loadCredReaderAllowlist(coll)
 
 	for _, name := range lsmPrograms {
 		program, ok := coll.Programs[name]
@@ -195,6 +201,23 @@ func (s *EBPFSource) armSelfProtection(coll *ebpf.Collection) {
 	}
 	if err := guard.Put(uint32(0), uint32(os.Getpid())); err != nil {
 		s.logger.Warn("arm self-protection failed", "err", err)
+	}
+}
+
+// loadCredReaderAllowlist populates the kernel map of comms exempt from the
+// file_open credential guard. The key is the comm exactly as the kernel reports
+// it: a fixed TASK_COMM_LEN buffer, the name followed by zero padding.
+func (s *EBPFSource) loadCredReaderAllowlist(coll *ebpf.Collection) {
+	readers, ok := coll.Maps["cred_readers"]
+	if !ok {
+		return
+	}
+	for _, comm := range s.opts.CredReaders {
+		var key [taskCommLen]byte
+		copy(key[:], comm)
+		if err := readers.Put(key, uint8(1)); err != nil {
+			s.logger.Warn("add cred-reader allowlist entry failed", "comm", comm, "err", err)
+		}
 	}
 }
 

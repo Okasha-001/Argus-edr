@@ -13,6 +13,7 @@
 //   bprm_check_security  deny exec from /tmp                     (E1)
 //   task_kill            deny fatal signals to the agent itself  (E2, self-protection)
 //   ptrace_access_check  deny ptrace/inject against the agent    (E2, self-protection)
+//   file_open            deny credential-file reads (completes 4i) (E4)
 //
 // Requires CONFIG_BPF_LSM and "bpf" present in the kernel's lsm= boot list.
 
@@ -21,6 +22,7 @@
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_tracing.h>
 #include "common.h"
+#include "credfile.h"
 
 char LICENSE[] SEC("license") = "GPL";
 
@@ -61,6 +63,17 @@ struct {
     __uint(max_entries, 256 * 1024);
 } enforce_events SEC(".maps");
 
+// cred_readers is the set of process comms allowed to read the shadow files when
+// the file_open hook is active. Userspace fills it from config at load; the auth
+// stack (sshd, login, su, ...) lives here so enforce mode never breaks logins.
+// Empty (the default until populated) means no reader is exempt.
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 64);
+    __type(key, char[TASK_COMM_LEN]);
+    __type(value, __u8);
+} cred_readers SEC(".maps");
+
 static __always_inline __u32 current_mode(void)
 {
     __u32 key = 0;
@@ -73,6 +86,16 @@ static __always_inline __u32 guarded_pid(void)
     __u32 key = 0;
     __u32 *pid = bpf_map_lookup_elem(&protected_pid, &key);
     return pid ? *pid : 0;
+}
+
+// is_allowed_reader is true when the current process's comm is on the credential
+// reader allowlist — the legitimate auth stack that must keep reading the shadow
+// files even while the file_open hook is enforcing.
+static __always_inline int is_allowed_reader(void)
+{
+    char comm[TASK_COMM_LEN] = {};
+    bpf_get_current_comm(comm, sizeof(comm));
+    return bpf_map_lookup_elem(&cred_readers, comm) != NULL;
 }
 
 static __always_inline int is_temp_path(const char *path)
@@ -206,6 +229,49 @@ int BPF_PROG(ptrace_guard, struct task_struct *child, unsigned int ptrace_mode, 
     struct event *e = reserve_event(EVENT_TAMPER);
     if (e) {
         e->fmode = (__u16)ptrace_mode;
+        e->ret = deny ? -EPERM : 0;
+        bpf_ringbuf_submit(e, 0);
+    }
+    return deny ? -EPERM : 0;
+}
+
+// Kernel-level credential-read denial, completing the 4i detection sensor: refuse
+// to open /etc/shadow or /etc/gshadow for any process not on the legitimate-reader
+// allowlist. The same basename+parent match as the sensor keeps it cheap; the
+// allowlist spares the auth stack. A denied open is reported as an EVENT_OPEN with
+// ret=-EPERM so the existing R-0002 rule fires on the live attempt.
+SEC("lsm/file_open")
+int BPF_PROG(file_open_guard, struct file *file, int ret)
+{
+    if (ret != 0)
+        return ret;
+
+    __u32 mode = current_mode();
+    if (mode == MODE_OFF)
+        return 0;
+
+    struct dentry *dentry = BPF_CORE_READ(file, f_path.dentry);
+    const unsigned char *name = BPF_CORE_READ(dentry, d_name.name);
+
+    char base[8] = {};
+    bpf_probe_read_kernel_str(base, sizeof(base), name);
+    if (!is_shadow_basename(base))
+        return 0;
+
+    char parent[4] = {};
+    bpf_probe_read_kernel_str(parent, sizeof(parent),
+                              BPF_CORE_READ(dentry, d_parent, d_name.name));
+    if (parent[0] != 'e' || parent[1] != 't' || parent[2] != 'c' || parent[3] != 0)
+        return 0; // a "shadow" file, but not under /etc
+
+    if (is_allowed_reader())
+        return 0; // sshd, login, su, ... must still read it
+
+    int deny = (mode == MODE_ENFORCE);
+    struct event *e = reserve_event(EVENT_OPEN);
+    if (e) {
+        __builtin_memcpy(e->filename, "/etc/", 5);
+        bpf_probe_read_kernel_str(&e->filename[5], sizeof(e->filename) - 5, name);
         e->ret = deny ? -EPERM : 0;
         bpf_ringbuf_submit(e, 0);
     }

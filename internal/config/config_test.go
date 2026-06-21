@@ -60,6 +60,30 @@ func TestLoadRejectsModeAboveMaxMode(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsOverlongCredReader(t *testing.T) {
+	// "this-comm-is-far-too-long" exceeds the 15-char comm the kernel stores, so
+	// it could never match and must be rejected rather than silently ignored.
+	path := writeConfig(t, "response:\n  cred_reader_allowlist: [this-comm-is-far-too-long]\n")
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected an error for a cred-reader comm longer than 15 chars")
+	}
+}
+
+func TestDefaultsIncludeAuthStackReaders(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("defaults: %v", err)
+	}
+	if len(cfg.Response.CredReaderAllowlist) == 0 {
+		t.Fatal("default cred-reader allowlist must protect the auth stack, got none")
+	}
+	for _, comm := range cfg.Response.CredReaderAllowlist {
+		if len(comm) > maxCommLen {
+			t.Errorf("default cred-reader %q exceeds the kernel comm limit", comm)
+		}
+	}
+}
+
 func TestModeValue(t *testing.T) {
 	for mode, want := range map[string]uint32{ModeOff: 0, ModeDryRun: 1, ModeEnforce: 2} {
 		if got := (Response{Mode: mode}).ModeValue(); got != want {

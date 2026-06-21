@@ -59,6 +59,18 @@ response:
   allowlist_paths:
     - /usr/lib/systemd/systemd
     - /usr/sbin/sshd
+  # Process comms allowed to read the shadow files while the kernel file_open
+  # guard is enforcing. The auth stack MUST stay listed or local logins break.
+  # Run dry-run first to discover any reader specific to this host, then enable
+  # enforce. Comms are matched exactly, ≤15 chars (as the kernel reports them).
+  cred_reader_allowlist:
+    - sshd
+    - login
+    - su
+    - sudo
+    - passwd
+    - unix_chkpwd
+    - systemd-logind
 
 outputs:
   - type: stdout

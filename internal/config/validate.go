@@ -34,6 +34,9 @@ func (c Config) validate() error {
 	if modeRank[c.Response.Mode] > modeRank[c.Response.MaxMode] {
 		return fmt.Errorf("response.mode %q exceeds response.max_mode %q", c.Response.Mode, c.Response.MaxMode)
 	}
+	if err := c.validateCredReaders(); err != nil {
+		return err
+	}
 	if c.Detection.Correlation.Enabled && c.Detection.Correlation.IncidentThreshold <= 0 {
 		return fmt.Errorf("detection.correlation.incident_threshold must be positive")
 	}
@@ -97,6 +100,26 @@ func (c Config) validateOutputs() error {
 		}
 		if out.Type == "loki" && out.Endpoint == "" {
 			return fmt.Errorf("outputs[%d] (loki) requires an endpoint", i)
+		}
+	}
+	return nil
+}
+
+// maxCommLen is TASK_COMM_LEN-1: the kernel stores a process comm in a 16-byte
+// buffer (name + NUL), so a longer allowlist entry could never match what the
+// file_open hook compares against.
+const maxCommLen = 15
+
+// validateCredReaders rejects allowlist entries the kernel could never match, so
+// a typo'd or over-long comm fails at load rather than silently leaving a reader
+// unprotected (or unexpectedly denied) at runtime.
+func (c Config) validateCredReaders() error {
+	for _, comm := range c.Response.CredReaderAllowlist {
+		if comm == "" {
+			return fmt.Errorf("response.cred_reader_allowlist contains an empty comm")
+		}
+		if len(comm) > maxCommLen {
+			return fmt.Errorf("response.cred_reader_allowlist entry %q exceeds %d chars (the kernel truncates comm)", comm, maxCommLen)
 		}
 	}
 	return nil
