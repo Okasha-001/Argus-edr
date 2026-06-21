@@ -12,6 +12,7 @@
 // Hooks:
 //   bprm_check_security  deny exec from /tmp                     (E1)
 //   task_kill            deny fatal signals to the agent itself  (E2, self-protection)
+//   ptrace_access_check  deny ptrace/inject against the agent    (E2, self-protection)
 //
 // Requires CONFIG_BPF_LSM and "bpf" present in the kernel's lsm= boot list.
 
@@ -169,6 +170,42 @@ int BPF_PROG(task_kill, struct task_struct *p, struct kernel_siginfo *info,
     struct event *e = reserve_event(EVENT_TAMPER);
     if (e) {
         e->fmode = (__u16)sig;
+        e->ret = deny ? -EPERM : 0;
+        bpf_ringbuf_submit(e, 0);
+    }
+    return deny ? -EPERM : 0;
+}
+
+// Self-protection: refuse ptrace against the agent so a debugger cannot read its
+// memory or inject code into it (the classic way to neutralise an EDR without
+// killing it). Same guard shape as task_kill — only the agent's own tgid, and
+// never the agent tracing itself. fmode carries the PTRACE_MODE_* access flags.
+SEC("lsm/ptrace_access_check")
+int BPF_PROG(ptrace_guard, struct task_struct *child, unsigned int ptrace_mode, int ret)
+{
+    if (ret != 0)
+        return ret;
+
+    __u32 guarded = guarded_pid();
+    if (guarded == 0)
+        return 0;
+
+    __u32 target = BPF_CORE_READ(child, tgid);
+    if (target != guarded)
+        return 0;
+
+    __u32 tracer = bpf_get_current_pid_tgid() >> 32;
+    if (tracer == guarded)
+        return 0; // the agent tracing itself (e.g. its own diagnostics) is fine
+
+    __u32 mode = current_mode();
+    if (mode == MODE_OFF)
+        return 0;
+
+    int deny = (mode == MODE_ENFORCE);
+    struct event *e = reserve_event(EVENT_TAMPER);
+    if (e) {
+        e->fmode = (__u16)ptrace_mode;
         e->ret = deny ? -EPERM : 0;
         bpf_ringbuf_submit(e, 0);
     }

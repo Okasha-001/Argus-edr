@@ -63,7 +63,7 @@ var sensorAttachments = []attachSpec{
 // lsmPrograms names the enforcement programs in the LSM object, attached together
 // when an object is present. Each is gated by the shared enforce_config mode, so
 // listing one here never turns it on — that still takes response.mode.
-var lsmPrograms = []string{"bprm_check", "task_kill"}
+var lsmPrograms = []string{"bprm_check", "task_kill", "ptrace_guard"}
 
 // EBPFSource loads the objects and feeds decoded events into the pipeline.
 type EBPFSource struct {
