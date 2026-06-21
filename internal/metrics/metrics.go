@@ -81,6 +81,13 @@ func (r *Registry) CounterVec(name, help, label string) *CounterVec {
 	return vec
 }
 
+// GaugeFunc registers a gauge whose value is read from fn at scrape time. Use it
+// for quantities owned elsewhere (e.g. the agent count held in the store) that
+// are cheaper to read on demand than to mirror on every change.
+func (r *Registry) GaugeFunc(name, help string, fn func() float64) {
+	r.register(&gaugeFunc{name: name, help: help, fn: fn})
+}
+
 // Histogram registers and returns a latency histogram with the given second
 // bucket bounds.
 func (r *Registry) Histogram(name, help string, buckets []float64) *Histogram {
@@ -116,6 +123,19 @@ func (r *Registry) Handler() http.Handler {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		_ = r.Render(w) // a broken client connection is the only failure; nothing to do
 	})
+}
+
+type gaugeFunc struct {
+	name, help string
+	fn         func() float64
+}
+
+func (g *gaugeFunc) writeProm(w *lineWriter) {
+	writeHeader(w, g.name, g.help, "gauge")
+	w.text(g.name)
+	w.char(' ')
+	w.float(g.fn())
+	w.char('\n')
 }
 
 // Counter is a value that only ever increases.

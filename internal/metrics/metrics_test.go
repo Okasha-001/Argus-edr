@@ -108,6 +108,20 @@ func TestHistogramVecLabelsBuckets(t *testing.T) {
 	}
 }
 
+func TestGaugeFuncReadsAtScrape(t *testing.T) {
+	reg := New()
+	count := 3
+	reg.GaugeFunc("argus_server_agents", "Enrolled agents.", func() float64 { return float64(count) })
+
+	if !strings.Contains(render(reg), "argus_server_agents 3") {
+		t.Errorf("gauge func not read at first scrape:\n%s", render(reg))
+	}
+	count = 5 // the source changed; the next scrape must reflect it
+	if !strings.Contains(render(reg), "argus_server_agents 5") {
+		t.Errorf("gauge func not re-read on second scrape:\n%s", render(reg))
+	}
+}
+
 func TestEscapeLabelValue(t *testing.T) {
 	reg := New()
 	vec := reg.CounterVec("argus_x_total", "x", "name")

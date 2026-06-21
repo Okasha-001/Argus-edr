@@ -34,19 +34,24 @@ type adminAPI struct {
 	token  string
 	logger *slog.Logger
 
-	stream *broadcaster
+	stream  *broadcaster
+	metrics *serverMetrics
 
 	mu      sync.Mutex
 	signals []correlate.Signal
 }
 
 func newAdminAPI(backing store.Store, rules *ruleset.Provider, ttl time.Duration, token string, logger *slog.Logger) *adminAPI {
-	return &adminAPI{store: backing, rules: rules, ttl: ttl, token: token, logger: logger, stream: newBroadcaster()}
+	return &adminAPI{
+		store: backing, rules: rules, ttl: ttl, token: token, logger: logger,
+		stream: newBroadcaster(), metrics: newServerMetrics(backing),
+	}
 }
 
 // recordSignal is the OnSignal hook for the gRPC service: it keeps the most
 // recent cross-host findings for the admin API to surface.
 func (a *adminAPI) recordSignal(signal correlate.Signal) {
+	a.metrics.signals.Inc()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.signals = append(a.signals, signal)
@@ -65,6 +70,7 @@ func (a *adminAPI) mux() http.Handler {
 	mux.HandleFunc("GET /api/signals", a.handleSignals)
 	mux.HandleFunc("GET /api/rules", a.handleRules)
 	mux.HandleFunc("GET /api/stream", a.handleStream)
+	mux.Handle("GET /metrics", a.metrics.registry.Handler())
 	// State-changing endpoints are authenticated: they can kill and quarantine.
 	mux.HandleFunc("POST /api/agents/{id}/commands", a.authed(a.handleEnqueueCommand))
 	mux.HandleFunc("POST /api/rules/reload", a.authed(a.handleReloadRules))

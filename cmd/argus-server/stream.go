@@ -64,6 +64,7 @@ func (b *broadcaster) publish(payload []byte) {
 // to the live console feed. Marshalling failures are dropped silently — a single
 // unrenderable alert must not disturb the stream.
 func (a *adminAPI) recordAlert(record store.AlertRecord) {
+	a.metrics.alerts.Inc()
 	payload, err := json.Marshal(record)
 	if err != nil {
 		return
