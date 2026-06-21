@@ -5,6 +5,8 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+
+	"github.com/argus-edr/argus/internal/model"
 )
 
 func quietResponder(mode Mode) *Responder {
@@ -83,6 +85,42 @@ func TestSetModeRoundTrip(t *testing.T) {
 	responder.SetMode(ModeEnforce)
 	if responder.Mode() != ModeEnforce {
 		t.Errorf("mode after set = %v, want enforce", responder.Mode())
+	}
+}
+
+func TestHandleThrottleHonoursMode(t *testing.T) {
+	responder := quietResponder(ModeOff)
+	var frozen bool
+	responder.freeze = func(uint32, string) error { frozen = true; return nil }
+
+	// A medium-severity alert with no explicit action lands on the throttle rung.
+	throttleAlert := func() *model.Alert {
+		return &model.Alert{RuleID: "R-T", Severity: model.SeverityMedium, Event: &model.Event{}}
+	}
+
+	responder.Handle(throttleAlert())
+	if frozen {
+		t.Error("throttle must not run while response mode is off")
+	}
+
+	responder.SetMode(ModeDryRun)
+	dryRun := throttleAlert()
+	responder.Handle(dryRun)
+	if frozen {
+		t.Error("throttle must not run in dry-run")
+	}
+	if dryRun.Response == nil || dryRun.Response.Action != string(ActionThrottle) || dryRun.Response.Result != "dry-run" {
+		t.Errorf("dry-run record = %+v, want throttle/dry-run", dryRun.Response)
+	}
+
+	responder.SetMode(ModeEnforce)
+	enforced := throttleAlert()
+	responder.Handle(enforced)
+	if !frozen {
+		t.Error("throttle should run in enforce mode")
+	}
+	if enforced.Response == nil || enforced.Response.Result != "suspended" {
+		t.Errorf("enforce record = %+v, want suspended", enforced.Response)
 	}
 }
 

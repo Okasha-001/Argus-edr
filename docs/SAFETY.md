@@ -43,6 +43,22 @@ even a compromised server cannot escalate a host past its ceiling.
 - **The LSM hook is narrow.** It only acts on what policy explicitly targets and
   respects any earlier denial (`if ret != 0 return ret`).
 
+## Graduated response
+
+A rule may name an explicit response, which always wins. Otherwise the responder
+picks one off a ladder by the alert's risk score (or, for a rule with no score,
+its severity):
+
+| Rung | Score | Action |
+|------|-------|--------|
+| throttle | ≥ 50 | **suspend** the process with `SIGSTOP` — a *reversible* freeze (`SIGCONT` resumes it) that halts the threat in place for review without the finality of a kill |
+| network-block | ≥ 75 | drop the process's egress (falls back to throttle when the alert has no network destination) |
+| kill | ≥ 90 | `SIGKILL` |
+
+The ladder only chooses *what* to do; *whether* it happens is still gated by the
+mode above — `off` does nothing, `dry-run` only records, `enforce` acts — and by
+the allowlist and PID-reuse guard. Lower-risk alerts stay alert-only.
+
 ## Operating rules
 
 1. **Test enforcement on a snapshotted VM**, never first on a host you care

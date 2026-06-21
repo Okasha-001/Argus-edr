@@ -11,9 +11,9 @@ import (
 	"github.com/argus-edr/argus/internal/model"
 )
 
-// killFunc terminates a process, given the pid and the comm we expect it to
-// still have. It is a field so tests can substitute it.
-type killFunc func(pid uint32, comm string) error
+// signalFunc delivers a signal to a process, given the pid and the comm we
+// expect it to still have. It is a field so tests can substitute the syscall.
+type signalFunc func(pid uint32, comm string) error
 
 // Responder carries out (or, in dry-run, only records) the response to an alert.
 // The mode is held atomically so the control plane can change the posture at
@@ -24,9 +24,11 @@ type killFunc func(pid uint32, comm string) error
 type Responder struct {
 	mode      atomic.Int32
 	maxMode   Mode
+	policy    Policy
 	allowlist map[string]bool
 	logger    *slog.Logger
-	kill      killFunc
+	kill      signalFunc
+	freeze    signalFunc
 	blocker   *networkBlocker
 }
 
@@ -42,9 +44,11 @@ func New(mode, maxMode Mode, allowlistPaths []string, logger *slog.Logger) *Resp
 	}
 	responder := &Responder{
 		maxMode:   maxMode,
+		policy:    DefaultPolicy(),
 		allowlist: allowlist,
 		logger:    logger,
 		kill:      guardedKill,
+		freeze:    guardedFreeze,
 		blocker:   newNetworkBlocker(execCommand),
 	}
 	responder.mode.Store(int32(clampMode(mode, maxMode)))
@@ -83,7 +87,7 @@ func clampMode(requested, ceiling Mode) Mode {
 // with what was done.
 func (r *Responder) Handle(alert *model.Alert) {
 	mode := r.Mode()
-	action := actionFor(alert)
+	action := r.policy.Action(alert)
 	if action == ActionAlertOnly || mode == ModeOff {
 		return
 	}
@@ -156,6 +160,11 @@ func (r *Responder) execute(action Action, alert *model.Alert) string {
 			return "failed: " + err.Error()
 		}
 		return "success"
+	case ActionThrottle:
+		if err := r.freeze(alert.Event.Process.PID, alert.Event.Process.Name); err != nil {
+			return "failed: " + err.Error()
+		}
+		return "suspended"
 	case ActionNetworkBlock, ActionQuarantine:
 		ip := alert.Event.Network.DstIP
 		if ip == "" {
@@ -174,18 +183,23 @@ func (r *Responder) allowlisted(event *model.Event) bool {
 	return r.allowlist[event.Process.Executable]
 }
 
-// guardedKill refuses to kill if the pid's comm no longer matches what the alert
-// observed, a cheap mitigation against killing the wrong process after PID reuse.
-func guardedKill(pid uint32, comm string) error {
+// signalGuarded re-reads /proc/<pid>/comm and refuses if it no longer matches
+// what the alert observed — a cheap guard against signalling the wrong process
+// after PID reuse — then delivers sig.
+func signalGuarded(pid uint32, comm string, sig syscall.Signal) error {
 	if comm != "" {
 		actual, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid))
 		if err != nil {
 			return fmt.Errorf("process %d gone: %w", pid, err)
 		}
-		if strings.TrimSpace(string(actual)) != comm {
-			return fmt.Errorf("pid %d is now %q, not %q: refusing to kill",
-				pid, strings.TrimSpace(string(actual)), comm)
+		if current := strings.TrimSpace(string(actual)); current != comm {
+			return fmt.Errorf("pid %d is now %q, not %q: refusing to signal", pid, current, comm)
 		}
 	}
-	return syscall.Kill(int(pid), syscall.SIGKILL)
+	return syscall.Kill(int(pid), sig)
 }
+
+// guardedKill terminates a process; guardedFreeze suspends it with a reversible
+// SIGSTOP (an analyst resumes it with SIGCONT). Both apply the PID-reuse guard.
+func guardedKill(pid uint32, comm string) error   { return signalGuarded(pid, comm, syscall.SIGKILL) }
+func guardedFreeze(pid uint32, comm string) error { return signalGuarded(pid, comm, syscall.SIGSTOP) }
