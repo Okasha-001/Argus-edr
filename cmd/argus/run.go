@@ -19,6 +19,7 @@ import (
 	"github.com/argus-edr/argus/internal/enrich"
 	"github.com/argus-edr/argus/internal/intel"
 	"github.com/argus-edr/argus/internal/logging"
+	"github.com/argus-edr/argus/internal/model"
 	"github.com/argus-edr/argus/internal/output"
 	"github.com/argus-edr/argus/internal/pipeline"
 	"github.com/argus-edr/argus/internal/respond"
@@ -73,6 +74,7 @@ func runAgent(args []string) error {
 		return err
 	}
 
+	guard := buildSelfProtection(cfg, sink, logger)
 	agent := pipeline.New(pipeline.Params{
 		Source:    buildSource(cfg, logger),
 		Enricher:  enrich.New(enrichOptions(cfg, yaraEngine)),
@@ -81,10 +83,12 @@ func runAgent(args []string) error {
 		Responder: responder,
 		Sink:      sink,
 		Logger:    logger,
+		Heartbeat: guard.heartbeat(),
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	guard.start(ctx)
 
 	fleetDone := startFleet(ctx, fleet, agent, responder, correlator, matcher, cfg, logger)
 
@@ -184,6 +188,70 @@ func enforcementObject(cfg config.Config) string {
 		return ""
 	}
 	return filepath.Join(filepath.Dir(cfg.Input.BPFObject), "edr_lsm.bpf.o")
+}
+
+// selfProtection bundles the userspace tamper checks so the runtime can wire the
+// watchdog's kick into the pipeline and start both under one context.
+type selfProtection struct {
+	integrity *respond.SelfIntegrity
+	watchdog  *respond.Watchdog
+}
+
+// buildSelfProtection assembles the binary-integrity check and liveness watchdog,
+// or returns nil when self-protection is disabled. A finding is written straight
+// to the sink (stamped with this host), exactly like a detection alert. An
+// unresolvable own-binary disables only the integrity half, never the watchdog.
+func buildSelfProtection(cfg config.Config, sink output.Sink, logger *slog.Logger) *selfProtection {
+	settings := cfg.Response.SelfProtection
+	if !settings.Enabled {
+		return nil
+	}
+	report := func(alert *model.Alert) {
+		alert.Event.Host = cfg.Agent.Hostname
+		if err := sink.WriteAlert(alert); err != nil {
+			logger.Error("write self-protection alert", "err", err)
+		}
+		logger.Warn("self-protection alert",
+			"rule", alert.RuleID, "name", alert.RuleName, "detail", alert.Description)
+	}
+
+	guard := &selfProtection{
+		watchdog: respond.NewWatchdog(
+			time.Duration(settings.WatchdogTimeoutSeconds)*time.Second, report, logger),
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		logger.Warn("self-integrity disabled: cannot resolve own binary", "err", err)
+		return guard
+	}
+	integrity, err := respond.NewSelfIntegrity(
+		exe, time.Duration(settings.IntegrityIntervalSeconds)*time.Second, report, logger)
+	if err != nil {
+		logger.Warn("self-integrity disabled", "err", err)
+		return guard
+	}
+	guard.integrity = integrity
+	return guard
+}
+
+// heartbeat is the pipeline hook that kicks the watchdog; nil (a no-op) when
+// self-protection is off, so the pipeline pays nothing for it.
+func (s *selfProtection) heartbeat() func() {
+	if s == nil {
+		return nil
+	}
+	return s.watchdog.Kick
+}
+
+// start launches the check loops, both bound to ctx so they stop with the agent.
+func (s *selfProtection) start(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	go s.watchdog.Run(ctx)
+	if s.integrity != nil {
+		go s.integrity.Run(ctx)
+	}
 }
 
 // buildCorrelator creates the per-process correlator, or nil when correlation is

@@ -82,7 +82,18 @@ type Response struct {
 	// password files when the file_open enforcement hook is active. The auth stack
 	// (sshd, login, su, ...) must stay listed or enforce mode would break local
 	// logins. Comms are matched exactly as the kernel reports them (≤15 chars).
-	CredReaderAllowlist []string `yaml:"cred_reader_allowlist"`
+	CredReaderAllowlist []string       `yaml:"cred_reader_allowlist"`
+	SelfProtection      SelfProtection `yaml:"self_protection"`
+}
+
+// SelfProtection runs the userspace tamper checks: a periodic SHA-256 of the
+// agent's own binary and a pipeline-liveness watchdog. Both only raise alerts —
+// they never block — so they are safe to keep on by default, independent of
+// response.mode.
+type SelfProtection struct {
+	Enabled                  bool `yaml:"enabled"`
+	IntegrityIntervalSeconds int  `yaml:"integrity_interval_seconds"`
+	WatchdogTimeoutSeconds   int  `yaml:"watchdog_timeout_seconds"`
 }
 
 type Output struct {
@@ -140,6 +151,8 @@ const (
 	defaultWindowSeconds    = 30
 	defaultIncidentScore    = 75
 	defaultHeartbeatSeconds = 30
+	defaultIntegritySeconds = 300
+	defaultWatchdogSeconds  = 300
 )
 
 // Defaults returns the configuration used when no file overrides a value.
@@ -175,6 +188,11 @@ func Defaults() Config {
 				"sshd", "login", "su", "sudo", "passwd", "chpasswd", "unix_chkpwd",
 				"systemd-logind", "agetty", "gdm-session-wor", "polkitd", "useradd",
 				"usermod", "gpasswd", "chage",
+			},
+			SelfProtection: SelfProtection{
+				Enabled:                  true,
+				IntegrityIntervalSeconds: defaultIntegritySeconds,
+				WatchdogTimeoutSeconds:   defaultWatchdogSeconds,
 			},
 		},
 		Outputs: []Output{{Type: "stdout", Format: "ecs"}},

@@ -39,6 +39,9 @@ type Params struct {
 	Sink       output.Sink
 	Logger     *slog.Logger
 	BufferSize int
+	// Heartbeat, when set, is called once per processed event so a watchdog can
+	// observe that the hot path is making progress.
+	Heartbeat func()
 }
 
 // Pipeline reads from the source and runs each event through the stages. The
@@ -101,6 +104,9 @@ func (p *Pipeline) Run(ctx context.Context) error {
 
 func (p *Pipeline) process(event *model.Event) {
 	p.stats.Events.Add(1)
+	if p.params.Heartbeat != nil {
+		p.params.Heartbeat()
+	}
 
 	if p.params.Enricher != nil {
 		p.params.Enricher.Enrich(event)

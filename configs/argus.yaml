@@ -71,6 +71,12 @@ response:
     - passwd
     - unix_chkpwd
     - systemd-logind
+  # Userspace tamper checks. These only raise alerts (never block), so they are
+  # independent of `mode` and safe to leave on. See docs/SAFETY.md.
+  self_protection:
+    enabled: true
+    integrity_interval_seconds: 300   # re-hash the agent binary this often
+    watchdog_timeout_seconds: 300     # alert if the pipeline makes no progress for this long
 
 outputs:
   - type: stdout

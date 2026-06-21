@@ -37,6 +37,14 @@ func (c Config) validate() error {
 	if err := c.validateCredReaders(); err != nil {
 		return err
 	}
+	if sp := c.Response.SelfProtection; sp.Enabled {
+		if sp.IntegrityIntervalSeconds <= 0 {
+			return fmt.Errorf("response.self_protection.integrity_interval_seconds must be positive")
+		}
+		if sp.WatchdogTimeoutSeconds <= 0 {
+			return fmt.Errorf("response.self_protection.watchdog_timeout_seconds must be positive")
+		}
+	}
 	if c.Detection.Correlation.Enabled && c.Detection.Correlation.IncidentThreshold <= 0 {
 		return fmt.Errorf("detection.correlation.incident_threshold must be positive")
 	}

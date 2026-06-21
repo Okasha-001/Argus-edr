@@ -59,6 +59,50 @@ The ladder only chooses *what* to do; *whether* it happens is still gated by the
 mode above — `off` does nothing, `dry-run` only records, `enforce` acts — and by
 the allowlist and PID-reuse guard. Lower-risk alerts stay alert-only.
 
+## Self-protection
+
+Three LSM hooks defend the agent itself. Like all enforcement they are gated by
+`response.mode`: inert at `off`, recording-only at `dry-run`, denying at
+`enforce`. Each only ever targets the agent's own pid (written into the
+`protected_pid` map at load), and a signal/trace the agent aims at itself always
+passes.
+
+| Hook | Protects against | On a hit |
+|------|------------------|----------|
+| `task_kill` | `kill -9` / `SIGSTOP` of the agent from another process | denies the signal, emits a `tamper` event (→ `R-0074`, T1562.001) |
+| `ptrace_access_check` | a debugger reading the agent's memory or injecting into it | denies the attach, emits `tamper` |
+| `file_open` | reads of `/etc/shadow`/`/etc/gshadow` by a process not on `response.cred_reader_allowlist` | denies the open, emits a blocked `open` event (→ `R-0002`, T1003) |
+
+> **Stopping a self-protected agent.** Because `task_kill` refuses `SIGKILL`,
+> `SIGTERM` and `SIGSTOP` in `enforce`, `systemctl stop argus` and `kill` will
+> *fail* while enforcement is on — this is the point of tamper protection. To
+> stop it deliberately, **lower the mode first**, then stop: set
+> `response.mode: off` (a fleet `SET_RESPONSE_MODE off`, or as root
+> `bpftool map update name enforce_config key 0 0 0 0 value 0 0 0 0`), which makes
+> the hooks inert, then stop the service. Detaching the LSM link (process exit
+> *forced* by the kernel, or `bpftool link detach`) also clears it.
+
+> **`file_open` allowlist.** The kernel deny is matched by process *comm*, which
+> is a coarse, spoofable key — a v1 heuristic, not a guarantee. The auth stack
+> (`sshd`, `login`, `su`, …) ships on the allowlist; **run `dry-run` first** and
+> read the blocked-open records to discover any reader specific to your host
+> (PAM modules, a display manager) before enabling `enforce`, or local logins
+> can break.
+
+### Userspace tamper checks
+
+Independent of the kernel hooks and *not* gated by `response.mode` (they only
+raise alerts, never block), `response.self_protection` runs two checks, on by
+default:
+
+- **Binary integrity** — a SHA-256 of the agent's own executable, re-hashed every
+  `integrity_interval_seconds`; a change underneath the running process raises
+  `R-SELF-INTEGRITY`.
+- **Liveness watchdog** — the pipeline kicks it per event; if the hot path makes
+  no progress for `watchdog_timeout_seconds` it raises `R-SELF-WATCHDOG`. It
+  cannot detect a fully frozen process, so keep the timeout above the host's
+  normal quiet periods to avoid false stalls.
+
 ## Operating rules
 
 1. **Test enforcement on a snapshotted VM**, never first on a host you care
