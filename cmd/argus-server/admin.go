@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -31,7 +30,7 @@ type adminAPI struct {
 	store  store.Store
 	rules  *ruleset.Provider
 	ttl    time.Duration
-	token  string
+	authz  *authz
 	logger *slog.Logger
 
 	stream  *broadcaster
@@ -41,9 +40,9 @@ type adminAPI struct {
 	signals []correlate.Signal
 }
 
-func newAdminAPI(backing store.Store, rules *ruleset.Provider, ttl time.Duration, token string, logger *slog.Logger) *adminAPI {
+func newAdminAPI(backing store.Store, rules *ruleset.Provider, ttl time.Duration, rbac *authz, logger *slog.Logger) *adminAPI {
 	return &adminAPI{
-		store: backing, rules: rules, ttl: ttl, token: token, logger: logger,
+		store: backing, rules: rules, ttl: ttl, authz: rbac, logger: logger,
 		stream: newBroadcaster(), metrics: newServerMetrics(backing),
 	}
 }
@@ -71,37 +70,46 @@ func (a *adminAPI) mux() http.Handler {
 	mux.HandleFunc("GET /api/rules", a.handleRules)
 	mux.HandleFunc("GET /api/stream", a.handleStream)
 	mux.Handle("GET /metrics", a.metrics.registry.Handler())
-	// State-changing endpoints are authenticated: they can kill and quarantine.
-	mux.HandleFunc("POST /api/agents/{id}/commands", a.authed(a.handleEnqueueCommand))
-	mux.HandleFunc("POST /api/rules/reload", a.authed(a.handleReloadRules))
+	// State-changing endpoints are authorized by role: enqueuing a command (which
+	// reaches an agent as kill/quarantine/posture) needs an operator; reloading the
+	// served ruleset, which affects the whole fleet, needs an admin.
+	mux.HandleFunc("POST /api/agents/{id}/commands", a.requireRole(RoleOperator, a.handleEnqueueCommand))
+	mux.HandleFunc("POST /api/rules/reload", a.requireRole(RoleAdmin, a.handleReloadRules))
 	return mux
 }
 
-// authed guards a state-changing handler with bearer-token authentication. With
-// no token configured the endpoint is refused (503), never silently open, so a
-// misconfiguration cannot expose the fleet's kill switch.
-func (a *adminAPI) authed(next http.HandlerFunc) http.HandlerFunc {
+// requireRole guards a handler with bearer-token authorization at minRole or
+// above. With no tokens configured the endpoint is refused (503), never silently
+// open, so a misconfiguration cannot expose the fleet's kill switch. The caller's
+// role is stashed on the request for the audit log.
+func (a *adminAPI) requireRole(minRole Role, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if a.token == "" {
-			a.logger.Warn("admin command refused: no admin token configured", "path", r.URL.Path, "from", r.RemoteAddr)
-			writeError(w, http.StatusServiceUnavailable, "admin token not configured (set ARGUS_ADMIN_TOKEN)")
+		if !a.authz.configured() {
+			a.logger.Warn("admin command refused: no tokens configured", "path", r.URL.Path, "from", r.RemoteAddr)
+			writeError(w, http.StatusServiceUnavailable, "no admin tokens configured (set --admin-token or --rbac-file)")
 			return
 		}
-		if !a.tokenValid(r) {
-			a.logger.Warn("admin command rejected: bad token", "path", r.URL.Path, "from", r.RemoteAddr)
+		role := RoleNone
+		if presented, ok := bearerToken(r); ok {
+			role = a.authz.role(presented)
+		}
+		if role == RoleNone {
+			a.logger.Warn("admin command rejected: missing or invalid token", "path", r.URL.Path, "from", r.RemoteAddr)
 			writeError(w, http.StatusUnauthorized, "missing or invalid bearer token")
 			return
 		}
-		next(w, r)
+		if role < minRole {
+			a.logger.Warn("admin command rejected: insufficient role",
+				"path", r.URL.Path, "from", r.RemoteAddr, "have", role, "need", minRole)
+			writeError(w, http.StatusForbidden, "token lacks the required role")
+			return
+		}
+		next(w, r.WithContext(withRole(r.Context(), role)))
 	}
 }
 
-func (a *adminAPI) tokenValid(r *http.Request) bool {
-	presented, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if !ok {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(presented), []byte(a.token)) == 1
+func bearerToken(r *http.Request) (string, bool) {
+	return strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 }
 
 // handleReloadRules re-reads the rule directory and bumps the served version.

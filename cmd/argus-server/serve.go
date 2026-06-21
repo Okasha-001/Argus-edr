@@ -43,7 +43,8 @@ func runServe(args []string) error {
 	certDir := flags.String("cert-dir", "fleet-certs", "directory --dev writes generated certs to")
 	dnsName := flags.String("dns", "argus-server", "server certificate DNS name when generating dev certs")
 	token := flags.String("token", os.Getenv("ARGUS_ENROLLMENT_TOKEN"), "required enrollment token (empty = open enrollment)")
-	adminToken := flags.String("admin-token", os.Getenv("ARGUS_ADMIN_TOKEN"), "bearer token for admin command/reload endpoints (empty = those endpoints are refused)")
+	adminToken := flags.String("admin-token", os.Getenv("ARGUS_ADMIN_TOKEN"), "bearer token granting admin on the command/reload endpoints (empty = refused unless --rbac-file is set)")
+	rbacFile := flags.String("rbac-file", os.Getenv("ARGUS_RBAC_FILE"), "YAML of token/role grants (viewer|operator|admin) for finer admin authorization")
 	storeKind := flags.String("store", store.BackendMemory, "state backend: memory (ephemeral) or sqlite (durable)")
 	dsn := flags.String("dsn", "", "data source for --store sqlite (database file path)")
 	ttl := flags.Duration("heartbeat-ttl", 90*time.Second, "treat an agent offline after this long without a heartbeat")
@@ -75,14 +76,18 @@ func runServe(args []string) error {
 	defer backing.Close()
 	logger.Info("state backend", "store", *storeKind)
 
+	rbac, err := newAuthz(*adminToken, *rbacFile)
+	if err != nil {
+		return err
+	}
 	correlator := correlate.NewCrossHost(*window, *minHosts)
-	admin := newAdminAPI(backing, rules, *ttl, *adminToken, logger)
+	admin := newAdminAPI(backing, rules, *ttl, rbac, logger)
 	reloadOnHangup(rules, logger)
 	if *token == "" {
 		logger.Warn("open enrollment: no --token set, any agent with a valid client certificate can enroll")
 	}
-	if *adminToken == "" {
-		logger.Warn("admin command endpoints disabled: no --admin-token set (kill/quarantine/reload will be refused)")
+	if !rbac.configured() {
+		logger.Warn("admin command endpoints disabled: no --admin-token or --rbac-file set (kill/quarantine/reload will be refused)")
 	}
 
 	service := api.New(api.Deps{
