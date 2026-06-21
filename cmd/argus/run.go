@@ -75,8 +75,10 @@ func runAgent(args []string) error {
 	}
 
 	guard := buildSelfProtection(cfg, sink, logger)
+	telemetry := buildObservability(cfg, logger)
+	source := buildSource(cfg, logger)
 	agent := pipeline.New(pipeline.Params{
-		Source:    buildSource(cfg, logger),
+		Source:    source,
 		Enricher:  enrich.New(enrichOptions(cfg, yaraEngine)),
 		Scorer:    scorer,
 		Engine:    engine,
@@ -84,11 +86,13 @@ func runAgent(args []string) error {
 		Sink:      sink,
 		Logger:    logger,
 		Heartbeat: guard.heartbeat(),
+		Observer:  telemetry.observer(),
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	guard.start(ctx)
+	telemetry.start(ctx, source)
 
 	fleetDone := startFleet(ctx, fleet, agent, responder, correlator, matcher, cfg, logger)
 

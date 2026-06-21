@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync/atomic"
+	"time"
 
 	"github.com/argus-edr/argus/internal/detect"
 	"github.com/argus-edr/argus/internal/enrich"
@@ -28,6 +29,26 @@ type Scorer interface {
 	Score(*model.Event) float64
 }
 
+// Observer receives pipeline telemetry for metrics. It is called only from the
+// single consumer goroutine, so implementations need no locking beyond what the
+// metric stores already provide; a nil Observer disables instrumentation at no
+// cost on the hot path.
+type Observer interface {
+	ObserveEvent()
+	ObserveAlert()
+	ObserveIncident()
+	ObserveStage(stage string, d time.Duration)
+}
+
+// Pipeline stage names used for the per-stage latency metric.
+const (
+	stageEnrich  = "enrich"
+	stageScore   = "score"
+	stageDetect  = "detect"
+	stageRespond = "respond"
+	stageOutput  = "output"
+)
+
 // Params are the collaborators a Pipeline drives. Enricher, Responder and Scorer
 // may be nil; Source, Engine, Sink and Logger are required.
 type Params struct {
@@ -42,6 +63,9 @@ type Params struct {
 	// Heartbeat, when set, is called once per processed event so a watchdog can
 	// observe that the hot path is making progress.
 	Heartbeat func()
+	// Observer, when set, receives per-event counts and per-stage latencies for
+	// metrics. Nil disables instrumentation.
+	Observer Observer
 }
 
 // Pipeline reads from the source and runs each event through the stages. The
@@ -108,32 +132,58 @@ func (p *Pipeline) process(event *model.Event) {
 		p.params.Heartbeat()
 	}
 
+	observer := p.params.Observer
+	if observer != nil {
+		observer.ObserveEvent()
+	}
+
 	if p.params.Enricher != nil {
-		p.params.Enricher.Enrich(event)
+		p.timed(observer, stageEnrich, func() { p.params.Enricher.Enrich(event) })
 	}
 	// Anomaly scoring runs after enrichment (so it sees the process tree) and
 	// before detection (so rules can match on anomaly.score).
 	if p.params.Scorer != nil {
-		event.AnomalyScore = p.params.Scorer.Score(event)
+		p.timed(observer, stageScore, func() { event.AnomalyScore = p.params.Scorer.Score(event) })
 	}
-	result := p.engine.Load().Evaluate(event)
+	var result detect.Result
+	p.timed(observer, stageDetect, func() { result = p.engine.Load().Evaluate(event) })
 
 	if p.params.Responder != nil {
-		for _, alert := range result.Alerts {
-			p.params.Responder.Handle(alert)
-		}
+		p.timed(observer, stageRespond, func() {
+			for _, alert := range result.Alerts {
+				p.params.Responder.Handle(alert)
+			}
+		})
 	}
 
-	if err := p.params.Sink.WriteEvent(event); err != nil {
-		p.params.Logger.Error("write event", "err", err)
-	}
+	p.timed(observer, stageOutput, func() {
+		if err := p.params.Sink.WriteEvent(event); err != nil {
+			p.params.Logger.Error("write event", "err", err)
+		}
+	})
 	p.emitAlerts(result.Alerts)
 	p.emitIncident(result.Incident)
+}
+
+// timed runs one stage, recording its latency when an observer is set. With no
+// observer it is a direct call, so the hot path pays nothing for metrics it isn't
+// collecting.
+func (p *Pipeline) timed(observer Observer, stage string, fn func()) {
+	if observer == nil {
+		fn()
+		return
+	}
+	start := time.Now()
+	fn()
+	observer.ObserveStage(stage, time.Since(start))
 }
 
 func (p *Pipeline) emitAlerts(alerts []*model.Alert) {
 	for _, alert := range alerts {
 		p.stats.Alerts.Add(1)
+		if p.params.Observer != nil {
+			p.params.Observer.ObserveAlert()
+		}
 		if err := p.params.Sink.WriteAlert(alert); err != nil {
 			p.params.Logger.Error("write alert", "err", err)
 		}
@@ -148,6 +198,9 @@ func (p *Pipeline) emitIncident(incident *model.Incident) {
 		return
 	}
 	p.stats.Incidents.Add(1)
+	if p.params.Observer != nil {
+		p.params.Observer.ObserveIncident()
+	}
 	if err := p.params.Sink.WriteIncident(incident); err != nil {
 		p.params.Logger.Error("write incident", "err", err)
 	}

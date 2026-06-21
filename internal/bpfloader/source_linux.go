@@ -79,6 +79,7 @@ type EBPFSource struct {
 	colls   []*ebpf.Collection
 	links   []link.Link
 	readers []*ringbuf.Reader
+	dropMap *ebpf.Map // per-CPU ring-drop counter, read for the loss metric
 
 	closeOnce sync.Once
 }
@@ -148,7 +149,27 @@ func (s *EBPFSource) loadSensors() error {
 		return fmt.Errorf("open events ring buffer: %w", err)
 	}
 	s.readers = append(s.readers, reader)
+	s.dropMap = coll.Maps["dropped"] // may be absent in an older object; RingDrops handles nil
 	return nil
+}
+
+// RingDrops returns the total events the kernel dropped because the ring buffer
+// was full, summed across CPUs. It is the userspace read of the per-CPU `dropped`
+// counter, exposed as the event-loss metric. Best-effort: a missing map or a read
+// error reports zero rather than failing a scrape.
+func (s *EBPFSource) RingDrops() uint64 {
+	if s.dropMap == nil {
+		return 0
+	}
+	var perCPU []uint64
+	if err := s.dropMap.Lookup(uint32(0), &perCPU); err != nil {
+		return 0
+	}
+	var total uint64
+	for _, count := range perCPU {
+		total += count
+	}
+	return total
 }
 
 // loadEnforcement is best-effort: enforcement needs CONFIG_BPF_LSM and "bpf" in

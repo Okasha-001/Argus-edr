@@ -34,6 +34,16 @@ struct {
     __uint(max_entries, RINGBUF_BYTES);
 } events SEC(".maps");
 
+// One per-CPU counter of ring-buffer drops. bpf_ringbuf_output fails when the
+// buffer is full, losing the event; userspace sums this and exposes it as the
+// event-loss metric (closes the O2 gap). Per-CPU so the increment needs no atomic.
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u64);
+} dropped SEC(".maps");
+
 // The event struct dwarfs the 512-byte BPF stack, so we stage each event in a
 // per-CPU scratch slot instead of on the stack.
 struct {
@@ -103,7 +113,12 @@ static __always_inline struct event *new_event(__u32 type)
 
 static __always_inline void emit(struct event *e)
 {
-    bpf_ringbuf_output(&events, e, sizeof(*e), 0);
+    if (bpf_ringbuf_output(&events, e, sizeof(*e), 0)) {
+        __u32 key = 0;
+        __u64 *lost = bpf_map_lookup_elem(&dropped, &key);
+        if (lost)
+            (*lost)++; // this CPU owns its slot, so a plain increment is safe
+    }
 }
 
 SEC("tracepoint/syscalls/sys_enter_execve")

@@ -36,6 +36,7 @@ type Config struct {
 	Intel      Intel      `yaml:"intel"`
 	Anomaly    Anomaly    `yaml:"anomaly"`
 	Yara       Yara       `yaml:"yara"`
+	Metrics    Metrics    `yaml:"metrics"`
 }
 
 type Agent struct {
@@ -144,6 +145,14 @@ type Yara struct {
 	MaxBytes int64  `yaml:"max_bytes"`
 }
 
+// Metrics exposes a Prometheus endpoint with event/alert counters, per-stage
+// pipeline latency, and ring-buffer loss. Off by default — it opens a port — and
+// bound to localhost when on. Scrape it at http://<address>/metrics.
+type Metrics struct {
+	Enabled bool   `yaml:"enabled"`
+	Address string `yaml:"address"`
+}
+
 const (
 	defaultRingBufferBytes  = 8 * 1024 * 1024
 	defaultHashMaxBytes     = 32 * 1024 * 1024
@@ -153,6 +162,7 @@ const (
 	defaultHeartbeatSeconds = 30
 	defaultIntegritySeconds = 300
 	defaultWatchdogSeconds  = 300
+	defaultMetricsAddr      = "127.0.0.1:9464"
 )
 
 // Defaults returns the configuration used when no file overrides a value.
@@ -198,6 +208,7 @@ func Defaults() Config {
 		Outputs: []Output{{Type: "stdout", Format: "ecs"}},
 		Fleet:   Fleet{Enabled: false, HeartbeatSeconds: defaultHeartbeatSeconds},
 		Yara:    Yara{Enabled: false, MaxBytes: defaultYaraMaxBytes},
+		Metrics: Metrics{Enabled: false, Address: defaultMetricsAddr},
 	}
 }
 

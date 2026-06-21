@@ -66,6 +66,9 @@ func (c Config) validate() error {
 	if c.Yara.Enabled && c.Yara.RulesDir == "" {
 		return fmt.Errorf("yara.rules_dir is required when yara.enabled is true")
 	}
+	if c.Metrics.Enabled && c.Metrics.Address == "" {
+		return fmt.Errorf("metrics.address is required when metrics.enabled is true")
+	}
 	return nil
 }
 
