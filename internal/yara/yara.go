@@ -7,7 +7,7 @@
 //   - text strings:  $a = "evil" [nocase]
 //   - hex strings:   $b = { 4D 5A ?? 00 }      (?? is a wildcard byte)
 //   - conditions:    $a, and / or / not, parentheses, true/false,
-//                    and the quantifiers "all of them", "any of them", "N of them".
+//     and the quantifiers "all of them", "any of them", "N of them".
 //
 // Anything outside the subset is a compile error, so a rule never silently
 // matches nothing. Scanning is plain substring/byte-pattern search — O(n*m) — which

@@ -17,14 +17,16 @@ var fieldAccessors = map[string]fieldAccessor{
 	"event.action": func(e *Event) (any, bool) { return e.Action, e.Action != "" },
 	"host.name":    func(e *Event) (any, bool) { return e.Host, e.Host != "" },
 
-	"process.pid":               func(e *Event) (any, bool) { return int64(e.Process.PID), true },
-	"process.ppid":              func(e *Event) (any, bool) { return int64(e.Process.PPID), true },
-	"process.name":              func(e *Event) (any, bool) { return e.Process.Name, e.Process.Name != "" },
-	"process.executable":        func(e *Event) (any, bool) { return e.Process.Executable, e.Process.Executable != "" },
-	"process.command_line":      func(e *Event) (any, bool) { return e.Process.CommandLine, e.Process.CommandLine != "" },
-	"process.stdio_socket":      func(e *Event) (any, bool) { return e.Process.StdioSocket, true },
-	"process.hash.sha256":       func(e *Event) (any, bool) { return e.Process.SHA256, e.Process.SHA256 != "" },
-	"yara.matched":              func(e *Event) (any, bool) { return strings.Join(e.Process.YaraMatches, ","), len(e.Process.YaraMatches) > 0 },
+	"process.pid":          func(e *Event) (any, bool) { return int64(e.Process.PID), true },
+	"process.ppid":         func(e *Event) (any, bool) { return int64(e.Process.PPID), true },
+	"process.name":         func(e *Event) (any, bool) { return e.Process.Name, e.Process.Name != "" },
+	"process.executable":   func(e *Event) (any, bool) { return e.Process.Executable, e.Process.Executable != "" },
+	"process.command_line": func(e *Event) (any, bool) { return e.Process.CommandLine, e.Process.CommandLine != "" },
+	"process.stdio_socket": func(e *Event) (any, bool) { return e.Process.StdioSocket, true },
+	"process.hash.sha256":  func(e *Event) (any, bool) { return e.Process.SHA256, e.Process.SHA256 != "" },
+	"yara.matched": func(e *Event) (any, bool) {
+		return strings.Join(e.Process.YaraMatches, ","), len(e.Process.YaraMatches) > 0
+	},
 	"process.parent.name":       func(e *Event) (any, bool) { return e.Process.ParentName, e.Process.ParentName != "" },
 	"process.parent.executable": func(e *Event) (any, bool) { return e.Process.ParentExecutable, e.Process.ParentExecutable != "" },
 
