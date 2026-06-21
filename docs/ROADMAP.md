@@ -45,8 +45,10 @@ line count; the phases add real capability, not padding.
   endpoints, and a `security_file_open` read sensor that closes the R-0002 live
   gap. Remaining: container escape (T1611); a kernel-level *deny* on file_open is
   Phase 6 (enforcement).
-- **Detection:** grow to 40+ techniques; ring-buffer-loss and per-program
-  runtime metrics.
+- **Detection:** done — 56 rules across the full ATT&CK kill chain plus a pure-Go
+  YARA engine (`yara.matched` / R-0073); see `docs/ATTACK_COVERAGE.md`. Next:
+  deeper cross-event correlation and ring-buffer-loss / per-program runtime
+  metrics (the latter is Phase 7 observability).
 - **Response:** graduated response and tc-based traffic shaping (egress
   block/quarantine already done).
 - **Hardening:** documented end-to-end host-overhead % under a live, rooted

@@ -38,6 +38,15 @@ intel:
   # feeds:
   #   - /etc/argus/intel/iocs.txt
 
+# YARA signature scanning of executed files. Off by default. When enabled, every
+# *.yar file under rules_dir is compiled and each exec'd binary is scanned (up to
+# max_bytes); a hit is exposed as yara.matched and rule R-0073 alerts. Pure-Go
+# engine, no libyara/cgo. See docs/YARA.md.
+yara:
+  enabled: false
+  # rules_dir: /etc/argus/yara
+  # max_bytes: 16777216
+
 response:
   mode: "off"         # off | dry-run | enforce
   # Highest posture the control plane may set on this agent. Defaults to `mode`,

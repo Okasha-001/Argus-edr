@@ -24,8 +24,36 @@ Every shipped rule, its ATT&CK mapping, and what it keys on. Rules live in
 | R-0065 | high | T1548 Abuse Elevation Control | `setuid(0)` privilege escalation |
 | R-0066 | high | T1071.004 Application Layer Protocol: DNS | DNS query with an overlong (tunneling) label |
 
-R-0007 is the only rule that defaults to a `kill` response (and only when
-enforcement is enabled). All others are alert-only by default.
+R-0007 and R-0044 default to a `kill` response (and only when enforcement is
+enabled). All others are alert-only by default.
+
+The table highlights the originals; the full set is 56 rules — list them all,
+validated, with `argus rules --dir rules`. The Phase-5 expansion added:
+
+- **Discovery** (R-0017–0024): user/system/file/account/network/process
+  enumeration, SUID search and service scanning. Low severity by design — the
+  signal is a *burst* that correlates into an incident, not a single command.
+- **Lateral movement** (R-0025–0028): outbound SSH/SCP pivots and remote-service
+  connections.
+- **Collection / credential access** (R-0029–0032, R-0070–0072): archive
+  staging, private-key and secret harvesting, /tmp staging, shadow reads via
+  command, brute-force tools and process-memory dumping.
+- **Exfiltration** (R-0033–0035): raw-socket, public file-drop and HTTP upload.
+- **Impact** (R-0036–0042): ransomware renames, recovery inhibition, service
+  stop, data destruction, cryptomining, shutdown and disk wipe.
+- **More C2 and evasion** (R-0043–0046, R-0067–0069): pipe-to-shell droppers,
+  scripting reverse shells, tunnels/proxies, disabling security tooling, log
+  clearing and base64-decode-to-shell.
+
+## Signature scanning (YARA)
+
+With `yara.enabled`, the enrich stage scans each executed file (bounded by
+`yara.max_bytes`) against the bundled `rules/yara/*.yar` signatures using a small
+pure-Go engine (no libyara/cgo). A hit is recorded in `yara.matched` and rule
+**R-0073** alerts on it. Because the agent scans the binary that is exec'd, the
+shipped signatures target malicious *binaries* (miners, reverse-shell tools, the
+EICAR test file); interpreted scripts are out of scope for this path. See
+`docs/YARA.md`.
 
 ## Telemetry caveats (be honest about live coverage)
 
