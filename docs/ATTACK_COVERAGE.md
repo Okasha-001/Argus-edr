@@ -18,7 +18,7 @@ roadmap grows it toward broad coverage with correlation and more sensors.
 | Defense Evasion | T1070 Indicator Removal | R-0014 | covered |
 | Defense Evasion | T1070.003 Clear Command History | R-0016 | partial |
 | Defense Evasion | T1620 Reflective Code Loading (memfd) | R-0063 | covered |
-| Credential Access | T1003 OS Credential Dumping | R-0002 | covered (read via security_file_open) |
+| Credential Access | T1003 OS Credential Dumping | R-0002 | covered (read via security_file_open; kernel-level deny in enforce) |
 | Command and Control | T1571 Non-Standard Port | R-0008 | covered |
 | Command and Control | T1071.004 Application Layer Protocol: DNS | R-0066 | covered |
 | Command and Control | T1105 Ingress Tool Transfer | R-0043 | covered |
@@ -54,6 +54,7 @@ roadmap grows it toward broad coverage with correlation and more sensors.
 | Impact | T1529 System Shutdown/Reboot | R-0041 | covered |
 | Impact | T1561.002 Disk Wipe: Disk Structure Wipe | R-0042 | covered |
 | Defense Evasion | T1562.001 Impair Defenses: Disable or Modify Tools | R-0067 | covered |
+| Defense Evasion | T1562.001 Impair Defenses (tamper with the agent) | R-0074 | covered (LSM task_kill/ptrace self-protection) |
 | Defense Evasion | T1070.002 Clear Linux or Mac System Logs | R-0068 | covered |
 | Defense Evasion | T1140 Deobfuscate/Decode Files or Information | R-0069 | covered |
 | Execution | T1204.002 User Execution: Malicious File (YARA) | R-0073 | covered |

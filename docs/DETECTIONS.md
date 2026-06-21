@@ -55,6 +55,16 @@ shipped signatures target malicious *binaries* (miners, reverse-shell tools, the
 EICAR test file); interpreted scripts are out of scope for this path. See
 `docs/YARA.md`.
 
+## Self-protection (Phase 6)
+
+ARGUS watches for attempts to disable it. Kernel LSM hooks (gated by
+`response.mode`) deny a `kill -9`/`SIGSTOP` or a `ptrace` aimed at the agent and
+emit a `tamper` event that **R-0074** (T1562.001) alerts on; the same enforcement
+object can deny credential-file reads outright (feeding R-0002). In userspace,
+`response.self_protection` re-hashes the agent binary (R-SELF-INTEGRITY) and runs
+a pipeline-liveness watchdog (R-SELF-WATCHDOG). The full model — and how to stop a
+self-protected agent — is in `docs/SAFETY.md`.
+
 ## Telemetry caveats (be honest about live coverage)
 
 - **openat forwards writes/creates only.** To keep the ring buffer quiet, the

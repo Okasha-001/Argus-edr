@@ -43,22 +43,23 @@ line count; the phases add real capability, not padding.
 - **Sensors:** done — ptrace (T1055), module/bpf load (T1547.006), memfd exec
   (T1620), RWX mmap (T1055), setuid (T1548), DNS query names (T1071.004), IPv6
   endpoints, and a `security_file_open` read sensor that closes the R-0002 live
-  gap. Remaining: container escape (T1611); a kernel-level *deny* on file_open is
-  Phase 6 (enforcement).
+  gap. The kernel-level *deny* on file_open is now done (Phase 6). Remaining:
+  container escape (T1611).
 - **Detection:** done — 56 rules across the full ATT&CK kill chain plus a pure-Go
   YARA engine (`yara.matched` / R-0073); see `docs/ATTACK_COVERAGE.md`. Next:
   deeper cross-event correlation and ring-buffer-loss / per-program runtime
   metrics (the latter is Phase 7 observability).
-- **Response:** graduated response and tc-based traffic shaping (egress
-  block/quarantine already done).
+- **Response:** graduated response (alert→throttle→block→kill) and egress
+  block/quarantine already done; tc-based traffic shaping next.
 - **Hardening:** documented end-to-end host-overhead % under a live, rooted
   workload (per-stage benchmarks + parser fuzzing already done — see
   `docs/PERFORMANCE.md`); a kernel-version CI matrix (5.8/5.15/6.1/6.8) with a
   load/verifier smoke test.
 - **Advanced:** anomaly baselining (rarity/Isolation Forest), optional YARA,
   anti-rootkit and eBPF-on-eBPF detection.
-- **Self-protection:** LSM `task_kill` + tamper alerts, watchdog, integrity
-  self-check.
+- **Self-protection:** done — LSM `task_kill` and `ptrace` deny guard the agent
+  (tamper alerts → R-0074), and a userspace binary-integrity check and liveness
+  watchdog (R-SELF-*). Remaining: a kernel watchdog that survives a frozen agent.
 - **Fleet, next:** a database-backed store (the interface is ready), RBAC and a
   signed audit log on the admin API, per-agent certificate issuance/rotation, and
   policy (not just rule) distribution.
