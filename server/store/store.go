@@ -44,12 +44,17 @@ type Agent struct {
 	// certificate, which stops one valid fleet cert from impersonating another
 	// agent. Empty only for agents enrolled without mTLS (in-process tests).
 	CertFingerprint string
-	FirstSeen       time.Time
-	LastSeen        time.Time
-	EventsProcessed uint64
-	Alerts          uint64
-	Incidents       uint64
-	RulesVersion    string
+	// PendingCertFingerprint is a freshly issued certificate the agent may rotate
+	// to. While set, the agent authenticates with either its current or its pending
+	// certificate; presenting the pending one promotes it and clears this slot, so
+	// the old certificate stops being accepted. Empty when no rotation is in flight.
+	PendingCertFingerprint string
+	FirstSeen              time.Time
+	LastSeen               time.Time
+	EventsProcessed        uint64
+	Alerts                 uint64
+	Incidents              uint64
+	RulesVersion           string
 }
 
 // Online reports whether the agent's last heartbeat is within ttl of now.
@@ -114,6 +119,12 @@ type Store interface {
 	Heartbeat(agentID string, stats Stats) (Agent, bool)
 	Get(agentID string) (Agent, bool)
 	List() []Agent
+	// SetPendingCert records a freshly issued certificate fingerprint the agent may
+	// rotate to, returning false for an unknown agent. PromoteCert makes that
+	// pending certificate the agent's sole identity once it presents it, returning
+	// false if the fingerprint is not the agent's pending one.
+	SetPendingCert(agentID, fingerprint string) bool
+	PromoteCert(agentID, fingerprint string) bool
 	RecordAlert(record AlertRecord)
 	RecentAlerts(limit int) []AlertRecord
 	QueryAlerts(filter AlertFilter) []AlertRecord

@@ -61,17 +61,18 @@ func withPragmas(dsn string) string {
 func (s *SQLite) migrate() error {
 	const schema = `
 CREATE TABLE IF NOT EXISTS agents (
-    id               TEXT PRIMARY KEY,
-    hostname         TEXT NOT NULL,
-    version          TEXT NOT NULL,
-    kernel           TEXT NOT NULL,
-    cert_fingerprint TEXT NOT NULL,
-    first_seen       INTEGER NOT NULL,
-    last_seen        INTEGER NOT NULL,
-    events_processed INTEGER NOT NULL DEFAULT 0,
-    alerts           INTEGER NOT NULL DEFAULT 0,
-    incidents        INTEGER NOT NULL DEFAULT 0,
-    rules_version    TEXT NOT NULL DEFAULT ''
+    id                       TEXT PRIMARY KEY,
+    hostname                 TEXT NOT NULL,
+    version                  TEXT NOT NULL,
+    kernel                   TEXT NOT NULL,
+    cert_fingerprint         TEXT NOT NULL,
+    pending_cert_fingerprint TEXT NOT NULL DEFAULT '',
+    first_seen               INTEGER NOT NULL,
+    last_seen                INTEGER NOT NULL,
+    events_processed         INTEGER NOT NULL DEFAULT 0,
+    alerts                   INTEGER NOT NULL DEFAULT 0,
+    incidents                INTEGER NOT NULL DEFAULT 0,
+    rules_version            TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS alerts (
     id                 TEXT PRIMARY KEY,
@@ -101,6 +102,14 @@ CREATE INDEX IF NOT EXISTS idx_commands_agent ON commands(agent_id, seq);
 `
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("create schema: %w", err)
+	}
+	// Bring a database created before certificate rotation up to date. CREATE TABLE
+	// IF NOT EXISTS leaves an existing agents table untouched, so the new column is
+	// added here; a fresh database already has it and reports a duplicate, which is
+	// the expected no-op.
+	if _, err := s.db.Exec(`ALTER TABLE agents ADD COLUMN pending_cert_fingerprint TEXT NOT NULL DEFAULT ''`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column name") {
+		return fmt.Errorf("add pending_cert_fingerprint column: %w", err)
 	}
 	return nil
 }
@@ -144,8 +153,8 @@ func (s *SQLite) Heartbeat(agentID string, stats Stats) (Agent, bool) {
 
 func (s *SQLite) Get(agentID string) (Agent, bool) {
 	row := s.db.QueryRow(
-		`SELECT id, hostname, version, kernel, cert_fingerprint, first_seen, last_seen,
-		        events_processed, alerts, incidents, rules_version
+		`SELECT id, hostname, version, kernel, cert_fingerprint, pending_cert_fingerprint,
+		        first_seen, last_seen, events_processed, alerts, incidents, rules_version
 		 FROM agents WHERE id = ?`, agentID)
 	agent, err := scanAgent(row)
 	if err == sql.ErrNoRows {
@@ -158,10 +167,36 @@ func (s *SQLite) Get(agentID string) (Agent, bool) {
 	return agent, true
 }
 
+func (s *SQLite) SetPendingCert(agentID, fingerprint string) bool {
+	result, err := s.db.Exec(`UPDATE agents SET pending_cert_fingerprint = ? WHERE id = ?`, fingerprint, agentID)
+	if err != nil {
+		s.logger.Error("store: set pending cert", "err", err)
+		return false
+	}
+	affected, _ := result.RowsAffected()
+	return affected > 0
+}
+
+// PromoteCert flips the pending certificate to current in one statement, guarded
+// on the fingerprint actually being this agent's pending one, so a stale or wrong
+// promotion is a no-op (zero rows) rather than an identity change.
+func (s *SQLite) PromoteCert(agentID, fingerprint string) bool {
+	result, err := s.db.Exec(
+		`UPDATE agents SET cert_fingerprint = ?, pending_cert_fingerprint = ''
+		 WHERE id = ? AND pending_cert_fingerprint = ? AND pending_cert_fingerprint != ''`,
+		fingerprint, agentID, fingerprint)
+	if err != nil {
+		s.logger.Error("store: promote cert", "err", err)
+		return false
+	}
+	affected, _ := result.RowsAffected()
+	return affected > 0
+}
+
 func (s *SQLite) List() []Agent {
 	rows, err := s.db.Query(
-		`SELECT id, hostname, version, kernel, cert_fingerprint, first_seen, last_seen,
-		        events_processed, alerts, incidents, rules_version
+		`SELECT id, hostname, version, kernel, cert_fingerprint, pending_cert_fingerprint,
+		        first_seen, last_seen, events_processed, alerts, incidents, rules_version
 		 FROM agents ORDER BY hostname`)
 	if err != nil {
 		s.logger.Error("store: list agents", "err", err)
@@ -190,7 +225,7 @@ func scanAgent(row rowScanner) (Agent, error) {
 	var agent Agent
 	var firstSeen, lastSeen int64
 	err := row.Scan(&agent.ID, &agent.Hostname, &agent.Version, &agent.Kernel,
-		&agent.CertFingerprint, &firstSeen, &lastSeen,
+		&agent.CertFingerprint, &agent.PendingCertFingerprint, &firstSeen, &lastSeen,
 		&agent.EventsProcessed, &agent.Alerts, &agent.Incidents, &agent.RulesVersion)
 	if err != nil {
 		return Agent{}, err

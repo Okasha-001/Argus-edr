@@ -6,8 +6,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
 	"math/big"
@@ -68,6 +70,52 @@ func GenerateAgentCert(commonName string, caCertPEM, caKeyPEM []byte) (PEMPair, 
 		return PEMPair{}, err
 	}
 	return generateLeaf(commonName, caCert, caKey, nil, nil, x509.ExtKeyUsageClientAuth)
+}
+
+// CertFingerprint returns the SHA-256 hex of the DER certificate inside certPEM.
+// This is the exact identity the control plane pins an agent to (it matches the
+// server's peerFingerprint over the live connection), so the issuer can register
+// a freshly minted certificate as an agent's pending identity before it connects.
+func CertFingerprint(certPEM []byte) (string, error) {
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return "", fmt.Errorf("decode certificate PEM")
+	}
+	sum := sha256.Sum256(block.Bytes)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// CertIssuer mints client certificates from a parsed fleet CA. The control plane
+// holds one (only when started with the CA key) to rotate an agent's certificate
+// at runtime, binding the new certificate to the agent's existing identity so a
+// rotation never forces a re-enrollment.
+type CertIssuer struct {
+	caCert *x509.Certificate
+	caKey  *ecdsa.PrivateKey
+}
+
+// NewCertIssuer parses and retains the CA so each Issue avoids re-decoding it. It
+// fails fast if the CA material is malformed.
+func NewCertIssuer(caCertPEM, caKeyPEM []byte) (*CertIssuer, error) {
+	caCert, caKey, err := parseCA(caCertPEM, caKeyPEM)
+	if err != nil {
+		return nil, err
+	}
+	return &CertIssuer{caCert: caCert, caKey: caKey}, nil
+}
+
+// Issue mints a client certificate for commonName and returns it with its
+// fingerprint — the identity the agent will present once it adopts the cert.
+func (i *CertIssuer) Issue(commonName string) (PEMPair, string, error) {
+	pair, err := generateLeaf(commonName, i.caCert, i.caKey, nil, nil, x509.ExtKeyUsageClientAuth)
+	if err != nil {
+		return PEMPair{}, "", err
+	}
+	fingerprint, err := CertFingerprint(pair.Cert)
+	if err != nil {
+		return PEMPair{}, "", err
+	}
+	return pair, fingerprint, nil
 }
 
 func parseCA(caCertPEM, caKeyPEM []byte) (*x509.Certificate, *ecdsa.PrivateKey, error) {

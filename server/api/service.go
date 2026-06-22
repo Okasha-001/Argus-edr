@@ -109,12 +109,25 @@ func (s *Service) authorizeIdentity(agentID, fingerprint string) (store.Agent, e
 	if !ok {
 		return store.Agent{}, status.Errorf(codes.NotFound, "unknown agent %q: re-enroll", agentID)
 	}
-	if agent.CertFingerprint != "" && agent.CertFingerprint != fingerprint {
-		s.logger.Warn("agent identity mismatch: certificate does not match the enrolled agent",
-			"agent", agentID, "host", agent.Hostname)
-		return store.Agent{}, status.Error(codes.PermissionDenied, "client certificate does not match the enrolled agent")
+	// An empty enrolled fingerprint is an in-process test peer (no mTLS); the
+	// current certificate is always accepted.
+	if agent.CertFingerprint == "" || fingerprint == agent.CertFingerprint {
+		return agent, nil
 	}
-	return agent, nil
+	// The agent presented the certificate an operator staged for it: complete the
+	// rotation so the new certificate becomes the sole identity and the old one
+	// stops being accepted.
+	if agent.PendingCertFingerprint != "" && fingerprint == agent.PendingCertFingerprint {
+		if s.store.PromoteCert(agentID, fingerprint) {
+			s.logger.Info("agent certificate rotation completed", "agent", agentID, "host", agent.Hostname)
+		}
+		agent.CertFingerprint = fingerprint
+		agent.PendingCertFingerprint = ""
+		return agent, nil
+	}
+	s.logger.Warn("agent identity mismatch: certificate does not match the enrolled agent",
+		"agent", agentID, "host", agent.Hostname)
+	return store.Agent{}, status.Error(codes.PermissionDenied, "client certificate does not match the enrolled agent")
 }
 
 // Heartbeat records the agent's liveness and counters and returns any queued

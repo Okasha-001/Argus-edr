@@ -38,6 +38,7 @@ func runServe(args []string) error {
 	uiAddr := flags.String("ui-addr", "", "serve the web console on this address (empty = console off)")
 	rulesDir := flags.String("rules", "rules", "directory of YAML detection rules to distribute")
 	caFile := flags.String("ca", "", "CA certificate (PEM)")
+	caKeyFile := flags.String("ca-key", "", "CA private key (PEM); enables runtime agent certificate rotation")
 	certFile := flags.String("cert", "", "server certificate (PEM)")
 	keyFile := flags.String("key", "", "server private key (PEM)")
 	dev := flags.Bool("dev", false, "generate ephemeral dev certs and write agent certs to --cert-dir")
@@ -60,9 +61,9 @@ func runServe(args []string) error {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
-	tlsConfig, err := buildServerTLS(serverTLSOptions{
+	tlsConfig, issuer, err := buildServerTLS(serverTLSOptions{
 		dev: *dev, certDir: *certDir, dnsName: *dnsName,
-		caFile: *caFile, certFile: *certFile, keyFile: *keyFile, logger: logger,
+		caFile: *caFile, caKeyFile: *caKeyFile, certFile: *certFile, keyFile: *keyFile, logger: logger,
 	})
 	if err != nil {
 		return err
@@ -85,7 +86,10 @@ func runServe(args []string) error {
 		return err
 	}
 	correlator := correlate.NewCrossHost(*window, *minHosts)
-	admin := newAdminAPI(backing, rules, *ttl, rbac, logger)
+	admin := newAdminAPI(backing, rules, *ttl, rbac, issuer, logger)
+	if issuer != nil {
+		logger.Info("agent certificate rotation enabled (CA key loaded)")
+	}
 	if *auditFile != "" {
 		sink, err := os.OpenFile(*auditFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
@@ -227,29 +231,66 @@ func reloadOnHangup(rules *ruleset.Provider, logger *slog.Logger) {
 }
 
 type serverTLSOptions struct {
-	dev                       bool
-	certDir, dnsName          string
-	caFile, certFile, keyFile string
-	logger                    *slog.Logger
+	dev                                  bool
+	certDir, dnsName                     string
+	caFile, caKeyFile, certFile, keyFile string
+	logger                               *slog.Logger
 }
 
 // buildServerTLS loads the mTLS config from files, or, in dev mode, mints a
-// throwaway CA and writes matching agent certs so a local agent can connect.
-func buildServerTLS(opts serverTLSOptions) (*tls.Config, error) {
+// throwaway CA and writes matching agent certs so a local agent can connect. It
+// also returns a CertIssuer when the CA private key is available (always in dev,
+// or via --ca-key in production), which the admin API uses to rotate agent
+// certificates; the issuer is nil otherwise and rotation is disabled.
+func buildServerTLS(opts serverTLSOptions) (*tls.Config, *fleet.CertIssuer, error) {
 	if opts.dev {
 		certs, err := fleet.GenerateDevCerts(opts.dnsName)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := fleet.WriteDevCerts(opts.certDir, certs); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		opts.logger.Warn("dev mode: using generated certificates, not for production",
 			"cert_dir", opts.certDir, "dns", opts.dnsName)
-		return fleet.ServerTLSConfig(certs.CA.Cert, certs.Server.Cert, certs.Server.Key)
+		tlsConfig, err := fleet.ServerTLSConfig(certs.CA.Cert, certs.Server.Cert, certs.Server.Key)
+		if err != nil {
+			return nil, nil, err
+		}
+		issuer, err := fleet.NewCertIssuer(certs.CA.Cert, certs.CA.Key)
+		if err != nil {
+			return nil, nil, err
+		}
+		return tlsConfig, issuer, nil
 	}
 	if opts.caFile == "" || opts.certFile == "" || opts.keyFile == "" {
-		return nil, errors.New("--ca, --cert and --key are required (or use --dev)")
+		return nil, nil, errors.New("--ca, --cert and --key are required (or use --dev)")
 	}
-	return fleet.ServerTLSConfigFromFiles(opts.caFile, opts.certFile, opts.keyFile)
+	tlsConfig, err := fleet.ServerTLSConfigFromFiles(opts.caFile, opts.certFile, opts.keyFile)
+	if err != nil {
+		return nil, nil, err
+	}
+	issuer, err := loadIssuer(opts.caFile, opts.caKeyFile)
+	if err != nil {
+		return nil, nil, err
+	}
+	return tlsConfig, issuer, nil
+}
+
+// loadIssuer builds a CertIssuer from the CA cert and key files. An empty key
+// path means rotation was not requested, so it returns a nil issuer (not an
+// error); a present-but-unreadable key is fatal so a misconfiguration is loud.
+func loadIssuer(caFile, caKeyFile string) (*fleet.CertIssuer, error) {
+	if caKeyFile == "" {
+		return nil, nil
+	}
+	caPEM, err := os.ReadFile(caFile)
+	if err != nil {
+		return nil, fmt.Errorf("read CA for issuer: %w", err)
+	}
+	caKeyPEM, err := os.ReadFile(caKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("read CA key for issuer: %w", err)
+	}
+	return fleet.NewCertIssuer(caPEM, caKeyPEM)
 }

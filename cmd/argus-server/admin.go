@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/argus-edr/argus/internal/fleet"
 	"github.com/argus-edr/argus/internal/fleet/fleetpb"
 	"github.com/argus-edr/argus/internal/version"
 	"github.com/argus-edr/argus/server/correlate"
@@ -34,6 +35,11 @@ type adminAPI struct {
 	authz  *authz
 	logger *slog.Logger
 
+	// issuer mints rotated agent certificates. It is nil unless the server was
+	// started with the CA key (--ca-key or --dev), in which case the rotate-cert
+	// endpoint is disabled rather than minting from a CA it does not hold.
+	issuer *fleet.CertIssuer
+
 	stream  *broadcaster
 	metrics *serverMetrics
 	audit   *auditLog
@@ -42,9 +48,9 @@ type adminAPI struct {
 	signals []correlate.Signal
 }
 
-func newAdminAPI(backing store.Store, rules *ruleset.Provider, ttl time.Duration, rbac *authz, logger *slog.Logger) *adminAPI {
+func newAdminAPI(backing store.Store, rules *ruleset.Provider, ttl time.Duration, rbac *authz, issuer *fleet.CertIssuer, logger *slog.Logger) *adminAPI {
 	return &adminAPI{
-		store: backing, rules: rules, ttl: ttl, authz: rbac, logger: logger,
+		store: backing, rules: rules, ttl: ttl, authz: rbac, issuer: issuer, logger: logger,
 		stream: newBroadcaster(), metrics: newServerMetrics(backing),
 		audit: newAuditLog(nil, nil, logger), // serve.go upgrades this to a signed, file-backed log
 	}
@@ -77,6 +83,7 @@ func (a *adminAPI) mux() http.Handler {
 	// reaches an agent as kill/quarantine/posture) needs an operator; reloading the
 	// served ruleset, which affects the whole fleet, needs an admin.
 	mux.HandleFunc("POST /api/agents/{id}/commands", a.requireRole(RoleOperator, a.handleEnqueueCommand))
+	mux.HandleFunc("POST /api/agents/{id}/rotate-cert", a.requireRole(RoleAdmin, a.handleRotateCert))
 	mux.HandleFunc("POST /api/rules/reload", a.requireRole(RoleAdmin, a.handleReloadRules))
 	return mux
 }
@@ -253,6 +260,52 @@ func (a *adminAPI) handleEnqueueCommand(w http.ResponseWriter, r *http.Request) 
 	a.audit.record(roleFromContext(r.Context()).String(), "enqueue_command",
 		agentID, fmt.Sprintf("%s %s from %s", req.Kind, req.Argument, r.RemoteAddr))
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued", "agent": agentID, "kind": req.Kind})
+}
+
+type rotatedCert struct {
+	Agent       string `json:"agent"`
+	Fingerprint string `json:"fingerprint"`
+	Cert        string `json:"cert"`
+	Key         string `json:"key"`
+}
+
+// handleRotateCert mints a fresh client certificate for an agent and stages it as
+// the agent's pending identity, returning the new keypair for the operator to
+// deliver to the host. The agent keeps using its current certificate until it
+// reconnects with the new one, which the server then promotes — so a rotation
+// never locks an agent out. Minting needs the CA key; without it the endpoint is
+// disabled. The new private key crosses the wire once, on the audited, token-
+// gated, localhost admin API — the same trust boundary as gen-certs.
+func (a *adminAPI) handleRotateCert(w http.ResponseWriter, r *http.Request) {
+	if a.issuer == nil {
+		writeError(w, http.StatusNotImplemented, "certificate rotation disabled: start the server with --ca-key (or --dev)")
+		return
+	}
+	agentID := r.PathValue("id")
+	agent, ok := a.store.Get(agentID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "unknown agent")
+		return
+	}
+	commonName := agent.Hostname
+	if commonName == "" {
+		commonName = agentID
+	}
+	pair, fingerprint, err := a.issuer.Issue(commonName)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "issue certificate: "+err.Error())
+		return
+	}
+	if !a.store.SetPendingCert(agentID, fingerprint) {
+		writeError(w, http.StatusNotFound, "unknown agent")
+		return
+	}
+	a.audit.record(roleFromContext(r.Context()).String(), "rotate_cert", agentID,
+		fmt.Sprintf("fingerprint %s from %s", fingerprint, r.RemoteAddr))
+	writeJSON(w, http.StatusOK, rotatedCert{
+		Agent: agentID, Fingerprint: fingerprint,
+		Cert: string(pair.Cert), Key: string(pair.Key),
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

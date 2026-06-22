@@ -12,6 +12,7 @@ func runStoreConformance(t *testing.T, newStore func(t *testing.T) Store) {
 	t.Helper()
 	t.Run("AgentLifecycle", func(t *testing.T) { testAgentLifecycle(t, newStore(t)) })
 	t.Run("Heartbeat", func(t *testing.T) { testHeartbeat(t, newStore(t)) })
+	t.Run("CertRotation", func(t *testing.T) { testCertRotation(t, newStore(t)) })
 	t.Run("CommandQueueFIFO", func(t *testing.T) { testCommandQueueFIFO(t, newStore(t)) })
 	t.Run("AlertIDAndLookup", func(t *testing.T) { testAlertIDAndLookup(t, newStore(t)) })
 	t.Run("AlertOrderAndLimit", func(t *testing.T) { testAlertOrderAndLimit(t, newStore(t)) })
@@ -53,6 +54,35 @@ func testHeartbeat(t *testing.T, s Store) {
 	}
 	if _, ok := s.Heartbeat("unknown", Stats{}); ok {
 		t.Error("heartbeat for an unknown agent should fail")
+	}
+}
+
+func testCertRotation(t *testing.T, s Store) {
+	agent := s.Enroll("web-01", "1.0", "6.8.0", "fp-current")
+
+	if s.SetPendingCert("unknown", "fp-new") {
+		t.Error("SetPendingCert for an unknown agent should fail")
+	}
+	if !s.SetPendingCert(agent.ID, "fp-new") {
+		t.Fatal("SetPendingCert for a known agent should succeed")
+	}
+	staged, _ := s.Get(agent.ID)
+	if staged.PendingCertFingerprint != "fp-new" || staged.CertFingerprint != "fp-current" {
+		t.Fatalf("staging a pending cert must not touch the current one: %+v", staged)
+	}
+
+	if s.PromoteCert(agent.ID, "fp-wrong") {
+		t.Error("PromoteCert should reject a fingerprint that is not the pending one")
+	}
+	if !s.PromoteCert(agent.ID, "fp-new") {
+		t.Fatal("PromoteCert of the staged fingerprint should succeed")
+	}
+	promoted, _ := s.Get(agent.ID)
+	if promoted.CertFingerprint != "fp-new" || promoted.PendingCertFingerprint != "" {
+		t.Errorf("promotion should make pending current and clear pending: %+v", promoted)
+	}
+	if s.PromoteCert(agent.ID, "fp-new") {
+		t.Error("PromoteCert with nothing pending should be a no-op")
 	}
 }
 

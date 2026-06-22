@@ -72,7 +72,7 @@ type Client struct {
 // Dial establishes the mTLS connection to the control plane. The connection is
 // lazy; the first RPC drives the handshake.
 func Dial(cfg ClientConfig) (*Client, error) {
-	tlsConfig, err := ClientTLSConfigFromFiles(cfg.CAFile, cfg.CertFile, cfg.KeyFile, cfg.ServerName)
+	tlsConfig, err := ClientTLSConfigReloadingFromFiles(cfg.CAFile, cfg.CertFile, cfg.KeyFile, cfg.ServerName)
 	if err != nil {
 		return nil, fmt.Errorf("fleet tls config: %w", err)
 	}

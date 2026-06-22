@@ -68,6 +68,44 @@ client is `internal/fleet`.
   The shared dev certificate makes every agent share one identity, so the binding
   only distinguishes hosts once they have per-agent certificates.
 
+## Certificate rotation
+
+Per-agent certificates expire, leak, or simply need rolling. The control plane
+rotates one **without losing the agent's enrolled identity** and without locking
+it out. Rotation needs the CA key, so start the server with `--ca-key` (always
+available under `--dev`); otherwise the endpoint is disabled (`501`).
+
+The flow is a staged overlap, not a cut-over:
+
+1. An admin calls `POST /api/agents/{id}/rotate-cert`. The server mints a fresh
+   client certificate from the CA, **stages its fingerprint as the agent's
+   pending identity** (the current one keeps working), and returns the new
+   keypair in the response.
+2. The operator delivers the returned `cert`/`key` to the host, replacing its
+   certificate files. The agent reloads its client certificate from disk on the
+   next reconnect — `internal/fleet` builds the client TLS with a reloader, so no
+   restart or config change is required (a restart also works).
+3. When the agent next connects presenting the new certificate, the server
+   recognises the pending fingerprint, **promotes it to the sole identity, and
+   drops the old one**. From then on the previous certificate is rejected with
+   `PermissionDenied`.
+
+Because both certificates are accepted only during the window between staging and
+the agent's first reconnect, a rotation is safe to start at any time: a slow or
+offline agent keeps authenticating with its old certificate until it actually
+adopts the new one. The new private key crosses the wire once, on the token-gated,
+audited, localhost admin API — the same trust boundary as `gen-certs`. Every
+rotation is written to the audit log.
+
+```bash
+# Rotate web-01's certificate, capturing the new keypair.
+curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+  http://127.0.0.1:8080/api/agents/$AGENT_ID/rotate-cert > rotated.json
+jq -r .cert rotated.json > web-01.pem
+jq -r .key  rotated.json > web-01-key.pem
+# Deliver web-01.pem / web-01-key.pem to the host's fleet cert/key paths.
+```
+
 ## Rule distribution
 
 The server loads `--rules` and validates every file with the *same* engine the

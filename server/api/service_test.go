@@ -229,6 +229,50 @@ func TestReportRejectsImpersonationByAnotherCert(t *testing.T) {
 	}
 }
 
+func TestCertRotationPreservesIdentity(t *testing.T) {
+	h := startServer(t, "")
+	ctx := context.Background()
+
+	// The agent enrolls with the shared dev certificate.
+	agent := h.dial(t, "web-01", "")
+	enrolled, err := agent.Enroll(ctx)
+	if err != nil {
+		t.Fatalf("enroll: %v", err)
+	}
+
+	// An operator mints a fresh certificate for the same host and stages its
+	// fingerprint as the agent's pending identity — exactly what the rotate-cert
+	// admin endpoint does, here driven directly through the store.
+	rotatedCert, err := fleet.GenerateAgentCert("web-01", h.certs.CA.Cert, h.certs.CA.Key)
+	if err != nil {
+		t.Fatalf("mint rotated cert: %v", err)
+	}
+	fingerprint, err := fleet.CertFingerprint(rotatedCert.Cert)
+	if err != nil {
+		t.Fatalf("fingerprint: %v", err)
+	}
+	if !h.store.SetPendingCert(enrolled.AgentID, fingerprint) {
+		t.Fatal("staging the pending certificate should succeed")
+	}
+
+	// The agent reconnects presenting the rotated certificate: it is authorized and
+	// the rotation completes, making the new certificate its sole identity.
+	rotated := h.dialWith(t, "web-01", rotatedCert)
+	if _, err := rotated.Heartbeat(ctx, enrolled.AgentID, fleet.Stats{RulesVersion: h.provider.Version()}); err != nil {
+		t.Fatalf("heartbeat with the rotated certificate failed: %v", err)
+	}
+
+	// The previous certificate is no longer accepted for this identity.
+	if _, err := agent.Heartbeat(ctx, enrolled.AgentID, fleet.Stats{}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("old certificate should be rejected after rotation, got %v", err)
+	}
+
+	// The rotated certificate keeps working on subsequent heartbeats.
+	if _, err := rotated.Heartbeat(ctx, enrolled.AgentID, fleet.Stats{RulesVersion: h.provider.Version()}); err != nil {
+		t.Fatalf("rotated certificate heartbeat failed after promotion: %v", err)
+	}
+}
+
 func TestEnrollRejectsBadToken(t *testing.T) {
 	h := startServer(t, "s3cr3t")
 	client := h.dial(t, "web-01", "wrong")

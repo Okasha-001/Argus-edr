@@ -123,8 +123,9 @@ Binds to `127.0.0.1:8080` by default (not mutually authenticated — keep local)
 | `GET /api/signals` | Recent cross-host signals. |
 | `GET /api/rules` | Rule catalogue (id/name/severity/technique) + bundle version. |
 | `GET /api/stream` | Live alert feed as Server-Sent Events (`event: alert`). |
-| `POST /api/agents/{id}/commands` | Queue a command `{"kind":…,"argument":…}`. |
-| `POST /api/rules/reload` | Re-read `--rules`, bump version (agents converge next heartbeat). |
+| `POST /api/agents/{id}/commands` | Queue a command `{"kind":…,"argument":…}` (operator). |
+| `POST /api/agents/{id}/rotate-cert` | Mint a fresh client cert, stage it as the agent's pending identity, and return the keypair (admin; needs `--ca-key`). |
+| `POST /api/rules/reload` | Re-read `--rules`, bump version (agents converge next heartbeat) (admin). |
 
 ---
 
@@ -132,7 +133,7 @@ Binds to `127.0.0.1:8080` by default (not mutually authenticated — keep local)
 
 ```
 argus-server serve      --grpc :8443 --http 127.0.0.1:8080 --rules ./rules \
-                        --ca … --cert … --key …   (or --dev)  --token <secret>
+                        --ca … --cert … --key … [--ca-key …]  (or --dev)  --token <secret>
                         --store memory|sqlite --dsn /var/lib/argus/fleet.db \
                         --policy-file ./configs/policy.sample.yml \
                         --correlate-window 5m --correlate-min-hosts 3 --heartbeat-ttl 90s

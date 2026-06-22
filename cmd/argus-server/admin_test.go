@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/argus-edr/argus/internal/fleet"
 	"github.com/argus-edr/argus/server/ruleset"
 	"github.com/argus-edr/argus/server/store"
 )
@@ -31,7 +33,7 @@ func testAdminAPI(t *testing.T, token string) *adminAPI {
 	if err != nil {
 		t.Fatalf("authz: %v", err)
 	}
-	return newAdminAPI(store.NewMemory(), rules, time.Minute, rbac, logger)
+	return newAdminAPI(store.NewMemory(), rules, time.Minute, rbac, nil, logger)
 }
 
 func adminWithAuthz(t *testing.T, rbac *authz) http.Handler {
@@ -122,5 +124,79 @@ func TestAdminRBACRolesGateByEndpoint(t *testing.T) {
 	}
 	if got := postReload("Bearer boss"); got != http.StatusOK {
 		t.Errorf("admin reload = %d, want 200", got)
+	}
+}
+
+func issuerForTest(t *testing.T) *fleet.CertIssuer {
+	t.Helper()
+	certs, err := fleet.GenerateDevCerts("argus-server")
+	if err != nil {
+		t.Fatalf("dev certs: %v", err)
+	}
+	issuer, err := fleet.NewCertIssuer(certs.CA.Cert, certs.CA.Key)
+	if err != nil {
+		t.Fatalf("issuer: %v", err)
+	}
+	return issuer
+}
+
+func rotateCert(handler http.Handler, agentID, auth string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/api/agents/"+agentID+"/rotate-cert", nil)
+	if auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestRotateCertStagesPendingIdentity(t *testing.T) {
+	api := testAdminAPI(t, "adm1n")
+	api.issuer = issuerForTest(t)
+	agent := api.store.Enroll("web-01", "1.0", "6.8.0", "fp-current")
+	handler := api.mux()
+
+	rec := rotateCert(handler, agent.ID, "Bearer adm1n")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("rotate-cert = %d, want 200; body %s", rec.Code, rec.Body.String())
+	}
+	var body rotatedCert
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Cert == "" || body.Key == "" || body.Fingerprint == "" {
+		t.Fatalf("response should carry the new cert, key and fingerprint: %+v", body)
+	}
+	// The minted fingerprint must be staged as the agent's pending identity, with
+	// its current identity untouched until the agent adopts the new cert.
+	stored, _ := api.store.Get(agent.ID)
+	if stored.PendingCertFingerprint != body.Fingerprint {
+		t.Errorf("pending = %q, want the issued fingerprint %q", stored.PendingCertFingerprint, body.Fingerprint)
+	}
+	if stored.CertFingerprint != "fp-current" {
+		t.Errorf("current identity should be unchanged, got %q", stored.CertFingerprint)
+	}
+}
+
+func TestRotateCertDisabledWithoutIssuer(t *testing.T) {
+	api := testAdminAPI(t, "adm1n") // no issuer configured
+	agent := api.store.Enroll("web-01", "1.0", "6.8.0", "fp")
+	if rec := rotateCert(api.mux(), agent.ID, "Bearer adm1n"); rec.Code != http.StatusNotImplemented {
+		t.Errorf("rotate-cert without an issuer = %d, want 501", rec.Code)
+	}
+}
+
+func TestRotateCertRequiresAdmin(t *testing.T) {
+	api := testAdminAPI(t, "")
+	api.authz = &authz{grants: []grant{{token: "op", role: RoleOperator}, {token: "boss", role: RoleAdmin}}}
+	api.issuer = issuerForTest(t)
+	agent := api.store.Enroll("web-01", "1.0", "6.8.0", "fp")
+	handler := api.mux()
+
+	if rec := rotateCert(handler, agent.ID, "Bearer op"); rec.Code != http.StatusForbidden {
+		t.Errorf("operator rotate-cert = %d, want 403", rec.Code)
+	}
+	if rec := rotateCert(handler, agent.ID, "Bearer boss"); rec.Code != http.StatusOK {
+		t.Errorf("admin rotate-cert = %d, want 200", rec.Code)
 	}
 }

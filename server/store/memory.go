@@ -66,6 +66,31 @@ func (m *Memory) Get(agentID string) (Agent, bool) {
 	return agent, ok
 }
 
+func (m *Memory) SetPendingCert(agentID, fingerprint string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	agent, ok := m.agents[agentID]
+	if !ok {
+		return false
+	}
+	agent.PendingCertFingerprint = fingerprint
+	m.agents[agentID] = agent
+	return true
+}
+
+func (m *Memory) PromoteCert(agentID, fingerprint string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	agent, ok := m.agents[agentID]
+	if !ok || agent.PendingCertFingerprint == "" || agent.PendingCertFingerprint != fingerprint {
+		return false
+	}
+	agent.CertFingerprint = fingerprint
+	agent.PendingCertFingerprint = ""
+	m.agents[agentID] = agent
+	return true
+}
+
 func (m *Memory) List() []Agent {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
