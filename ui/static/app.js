@@ -577,7 +577,41 @@ async function renderDetections() {
     tactics[t] = (tactics[t] || 0) + 1;
   }
   $("#coverage").replaceChildren(...Object.entries(tactics).sort().map(([t, n]) => tile(n, t)));
+  drawMatrix();
   drawRules();
+}
+
+// drawMatrix renders an ATT&CK-Navigator-style coverage grid: one column per
+// tactic (in kill-chain order), each technique a cell shaded by how many rules
+// cover it. It is the in-console companion to the downloadable Navigator layer.
+const tacticOrder = ["initial-access", "execution", "persistence", "privilege-escalation",
+  "defense-evasion", "credential-access", "discovery", "lateral-movement", "collection",
+  "command-and-control", "exfiltration", "impact"];
+function drawMatrix() {
+  const byTactic = {};
+  for (const r of allRules) {
+    const tactic = (r.technique && r.technique.tactic) || "uncategorized";
+    const id = (r.technique && r.technique.id) || "—";
+    (byTactic[tactic] = byTactic[tactic] || {});
+    (byTactic[tactic][id] = byTactic[tactic][id] || { count: 0, name: (r.technique && r.technique.name) || "" }).count++;
+  }
+  const tactics = Object.keys(byTactic).sort((a, b) => {
+    const ia = tacticOrder.indexOf(a), ib = tacticOrder.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+  const maxCount = Math.max(1, ...Object.values(byTactic).flatMap((t) => Object.values(t).map((x) => x.count)));
+  $("#matrix").replaceChildren(...tactics.map((tactic) => {
+    const techs = Object.entries(byTactic[tactic]).sort();
+    const cells = techs.map(([id, info]) => {
+      const intensity = 0.25 + 0.75 * (info.count / maxCount);
+      const cell = el("div", { class: "mx-cell", title: `${id} ${info.name} · ${info.count} rule(s)`,
+        style: `background: color-mix(in srgb, var(--accent) ${Math.round(intensity * 100)}%, var(--surface))` });
+      cell.append(el("span", { class: "mx-id", text: id }), el("span", { class: "mx-n", text: String(info.count) }));
+      return cell;
+    });
+    return el("div", { class: "mx-col" },
+      el("div", { class: "mx-head", text: tactic.replace(/-/g, " ") }), ...cells);
+  }));
 }
 function drawRules() {
   const q = ($("#r-filter").value || "").toLowerCase();

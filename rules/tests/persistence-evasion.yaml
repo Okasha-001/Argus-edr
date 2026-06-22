@@ -1,0 +1,111 @@
+# Detection-as-code fixtures: persistence & defense-evasion.
+
+# R-0003 — persistence via cron
+- name: write under /etc/cron.d fires R-0003
+  rule: R-0003
+  expect: fire
+  event: { action: open, file: { path: /etc/cron.d/backdoor } }
+- name: write to /etc/hosts does not fire R-0003
+  rule: R-0003
+  expect: no-fire
+  event: { action: open, file: { path: /etc/hosts } }
+
+# R-0004 — persistence via systemd unit
+- name: new systemd unit fires R-0004
+  rule: R-0004
+  expect: fire
+  event: { action: open, file: { path: /etc/systemd/system/evil.service } }
+- name: unrelated /etc file does not fire R-0004
+  rule: R-0004
+  expect: no-fire
+  event: { action: open, file: { path: /etc/motd } }
+
+# R-0005 — SSH authorized_keys modified
+- name: authorized_keys write fires R-0005
+  rule: R-0005
+  expect: fire
+  event: { action: open, file: { path: /root/.ssh/authorized_keys } }
+- name: ssh config write does not fire R-0005
+  rule: R-0005
+  expect: no-fire
+  event: { action: open, file: { path: /root/.ssh/config } }
+
+# R-0006 — ld.so.preload hijack
+- name: ld.so.preload write fires R-0006
+  rule: R-0006
+  expect: fire
+  event: { action: open, file: { path: /etc/ld.so.preload } }
+- name: ld.so.conf write does not fire R-0006
+  rule: R-0006
+  expect: no-fire
+  event: { action: open, file: { path: /etc/ld.so.conf } }
+
+# R-0014 — log tampering
+- name: deleting /var/log/auth.log fires R-0014
+  rule: R-0014
+  expect: fire
+  event: { action: unlink, file: { path: /var/log/auth.log } }
+- name: deleting a temp file does not fire R-0014
+  rule: R-0014
+  expect: no-fire
+  event: { action: unlink, file: { path: /tmp/build.log } }
+
+# R-0015 — setuid bit added
+- name: chmod with setuid bit fires R-0015
+  rule: R-0015
+  expect: fire
+  event: { action: chmod, file: { path: /usr/local/bin/x, mode: 2048 } }
+- name: chmod 0644 does not fire R-0015
+  rule: R-0015
+  expect: no-fire
+  event: { action: chmod, file: { path: /usr/local/bin/x, mode: 420 } }
+
+# R-0016 — shell history tampering
+- name: deleting .bash_history fires R-0016
+  rule: R-0016
+  expect: fire
+  event: { action: unlink, file: { path: /root/.bash_history } }
+- name: deleting .bashrc does not fire R-0016
+  rule: R-0016
+  expect: no-fire
+  event: { action: unlink, file: { path: /root/.bashrc } }
+
+# R-0067 — security tooling disabled
+- name: setenforce 0 fires R-0067
+  rule: R-0067
+  expect: fire
+  event: { action: exec, process: { name: setenforce, command_line: "setenforce 0" } }
+- name: setenforce 1 does not fire R-0067
+  rule: R-0067
+  expect: no-fire
+  event: { action: exec, process: { name: setenforce, command_line: "setenforce 1" } }
+
+# R-0068 — system log cleared
+- name: journalctl vacuum fires R-0068
+  rule: R-0068
+  expect: fire
+  event: { action: exec, process: { name: journalctl, command_line: "journalctl --vacuum-time=1s" } }
+- name: journalctl view does not fire R-0068
+  rule: R-0068
+  expect: no-fire
+  event: { action: exec, process: { name: journalctl, command_line: "journalctl -xe" } }
+
+# R-0069 — base64-decoded command piped to a shell
+- name: base64 -d piped to bash fires R-0069
+  rule: R-0069
+  expect: fire
+  event: { action: exec, process: { name: bash, command_line: "base64 -d payload.b64 | bash" } }
+- name: plain base64 of a file does not fire R-0069
+  rule: R-0069
+  expect: no-fire
+  event: { action: exec, process: { name: base64, command_line: "base64 input.txt" } }
+
+# R-0074 — tamper attempt against the agent
+- name: tamper event fires R-0074
+  rule: R-0074
+  expect: fire
+  event: { action: tamper, process: { name: attacker } }
+- name: ordinary exec does not fire R-0074
+  rule: R-0074
+  expect: no-fire
+  event: { action: exec, process: { name: bash } }

@@ -210,6 +210,16 @@ func mustConvert(t *testing.T, document string) *Rule {
 
 // singleLeaf converts a one-field process_creation rule and returns the field
 // leaf, peeling off the event-action guard.
+func TestConvertNumericModifiers(t *testing.T) {
+	// Sigma's numeric comparison modifiers map to the ARGUS gt/ge/lt/le operators.
+	for modifier, wantOp := range map[string]string{"gt": "gt", "gte": "ge", "lt": "lt", "lte": "le"} {
+		leaf := singleLeaf(t, "CommandLine|"+modifier, "1024")
+		if leaf.Op != wantOp {
+			t.Errorf("modifier %q -> op %q, want %q", modifier, leaf.Op, wantOp)
+		}
+	}
+}
+
 func singleLeaf(t *testing.T, field, value string) *condDoc {
 	t.Helper()
 	rule := mustConvert(t, strings.Join([]string{

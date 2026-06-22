@@ -29,6 +29,8 @@ func dispatch(command string, args []string) error {
 		return runRules(args)
 	case "sigma":
 		return runSigma(args)
+	case "test-rules":
+		return runTestRules(args)
 	case "baseline":
 		return runBaseline(args)
 	case "version":
@@ -51,9 +53,10 @@ usage: argus <command> [flags]
 commands:
   run      run the agent against the configured source (live eBPF by default)
   replay   run the pipeline over a recorded NDJSON event stream (no root)
-  rules    load and list the detection rules
-  sigma    convert upstream Sigma rules into the ARGUS rule format
-  baseline build an anomaly baseline from a recorded event stream
+  rules      load and list the detection rules
+  sigma      convert upstream Sigma rules into the ARGUS rule format
+  test-rules run the detection-as-code fixtures (should-fire/should-not-fire)
+  baseline   build an anomaly baseline from a recorded event stream
   version  print the version
 
 run "argus <command> -h" for a command's flags

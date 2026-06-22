@@ -136,6 +136,11 @@ run: all
 replay: build
 	$(BIN_DIR)/argus replay --rules rules test/integration/testdata/killchain.ndjson
 
+## test-rules: run the detection-as-code fixtures (should-fire/should-not-fire, FP rate)
+.PHONY: test-rules
+test-rules: build
+	$(BIN_DIR)/argus test-rules --rules rules --tests rules/tests --require-coverage
+
 ## install: install binaries, objects, rules and config onto the host
 .PHONY: install
 install: all

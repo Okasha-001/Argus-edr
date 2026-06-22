@@ -1,0 +1,141 @@
+# Detection-as-code fixtures: discovery & syscall sensors.
+
+# R-0017 — system owner/user discovery
+- name: whoami fires R-0017
+  rule: R-0017
+  expect: fire
+  event: { action: exec, process: { name: whoami } }
+- name: ls does not fire R-0017
+  rule: R-0017
+  expect: no-fire
+  event: { action: exec, process: { name: ls } }
+
+# R-0018 — system information discovery
+- name: uname fires R-0018
+  rule: R-0018
+  expect: fire
+  event: { action: exec, process: { name: uname } }
+- name: ls does not fire R-0018
+  rule: R-0018
+  expect: no-fire
+  event: { action: exec, process: { name: ls } }
+
+# R-0019 — SUID/SGID search
+- name: find -perm -u=s fires R-0019
+  rule: R-0019
+  expect: fire
+  event: { action: exec, process: { name: find, command_line: "find / -perm -u=s -type f" } }
+- name: find by name does not fire R-0019
+  rule: R-0019
+  expect: no-fire
+  event: { action: exec, process: { name: find, command_line: "find / -name '*.log'" } }
+
+# R-0020 — account discovery via passwd
+- name: cat /etc/passwd fires R-0020
+  rule: R-0020
+  expect: fire
+  event: { action: exec, process: { name: cat, command_line: "cat /etc/passwd" } }
+- name: cat /etc/hosts does not fire R-0020
+  rule: R-0020
+  expect: no-fire
+  event: { action: exec, process: { name: cat, command_line: "cat /etc/hosts" } }
+
+# R-0021 — remote system discovery
+- name: arp -a fires R-0021
+  rule: R-0021
+  expect: fire
+  event: { action: exec, process: { name: arp, command_line: "arp -a" } }
+- name: ls does not fire R-0021
+  rule: R-0021
+  expect: no-fire
+  event: { action: exec, process: { name: ls, command_line: "ls" } }
+
+# R-0022 — network configuration discovery
+- name: netstat fires R-0022
+  rule: R-0022
+  expect: fire
+  event: { action: exec, process: { name: netstat, command_line: "netstat -tulpn" } }
+- name: cat does not fire R-0022
+  rule: R-0022
+  expect: no-fire
+  event: { action: exec, process: { name: cat, command_line: "cat file" } }
+
+# R-0023 — process discovery
+- name: ps aux fires R-0023
+  rule: R-0023
+  expect: fire
+  event: { action: exec, process: { name: ps, command_line: "ps aux" } }
+- name: bare ps does not fire R-0023
+  rule: R-0023
+  expect: no-fire
+  event: { action: exec, process: { name: ps, command_line: "ps" } }
+
+# R-0024 — network service scanning
+- name: nmap fires R-0024
+  rule: R-0024
+  expect: fire
+  event: { action: exec, process: { name: nmap, command_line: "nmap -sS 10.0.0.0/24" } }
+- name: ping does not fire R-0024
+  rule: R-0024
+  expect: no-fire
+  event: { action: exec, process: { name: ping, command_line: "ping host" } }
+
+# R-0060 — process injection via ptrace
+- name: ptrace ATTACH fires R-0060
+  rule: R-0060
+  expect: fire
+  event: { action: ptrace, process: { name: injector }, syscall: { request: 16, target_pid: 1234 } }
+- name: ptrace TRACEME does not fire R-0060
+  rule: R-0060
+  expect: no-fire
+  event: { action: ptrace, process: { name: gdb }, syscall: { request: 0 } }
+
+# R-0061 — kernel module loaded
+- name: module load fires R-0061
+  rule: R-0061
+  expect: fire
+  event: { action: module_load, process: { name: insmod } }
+- name: exec does not fire R-0061
+  rule: R-0061
+  expect: no-fire
+  event: { action: exec, process: { name: insmod } }
+
+# R-0062 — bpf() from an unexpected process
+- name: bpf from an unknown process fires R-0062
+  rule: R-0062
+  expect: fire
+  event: { action: bpf, process: { name: loader } }
+- name: bpf from bpftool does not fire R-0062
+  rule: R-0062
+  expect: no-fire
+  event: { action: bpf, process: { name: bpftool } }
+
+# R-0063 — fileless payload staging
+- name: memfd_create fires R-0063
+  rule: R-0063
+  expect: fire
+  event: { action: memfd_create, process: { name: dropper } }
+- name: exec does not fire R-0063
+  rule: R-0063
+  expect: no-fire
+  event: { action: exec, process: { name: dropper } }
+
+# R-0064 — writable and executable memory mapping
+- name: RWX mmap fires R-0064
+  rule: R-0064
+  expect: fire
+  event: { action: mmap_exec, process: { name: loader } }
+- name: exec does not fire R-0064
+  rule: R-0064
+  expect: no-fire
+  event: { action: exec, process: { name: loader } }
+
+# R-0065 — privilege escalation to root via setuid
+- name: setuid(0) fires R-0065
+  rule: R-0065
+  expect: fire
+  event: { action: setuid, process: { name: exploit }, syscall: { new_uid: 0 } }
+- name: setuid to a normal user does not fire R-0065
+  rule: R-0065
+  expect: no-fire
+  event: { action: setuid, process: { name: su }, syscall: { new_uid: 1000 } }

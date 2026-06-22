@@ -163,6 +163,12 @@ func modifierOp(modifiers []string) (op string, requireAll bool, err error) {
 			op = "regex"
 		case "cidr":
 			op = "cidr"
+		case "gt", "lt":
+			op = strings.ToLower(modifier)
+		case "gte":
+			op = "ge"
+		case "lte":
+			op = "le"
 		default:
 			return "", false, &UnsupportedError{Reason: fmt.Sprintf("value modifier %q", modifier)}
 		}

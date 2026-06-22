@@ -101,6 +101,7 @@ func (a *adminAPI) mux() http.Handler {
 	mux.HandleFunc("GET /api/alerts/{id}/triage", a.handleTriage)
 	mux.HandleFunc("GET /api/signals", a.handleSignals)
 	mux.HandleFunc("GET /api/rules", a.handleRules)
+	mux.HandleFunc("GET /api/detections/navigator", a.handleNavigator)
 	mux.HandleFunc("GET /api/stream", a.handleStream)
 	// Threat hunting is read-only analysis over the event lake: it queries history,
 	// it never changes fleet state, so it stays open like the other read endpoints.
