@@ -27,6 +27,8 @@ func runReplay(args []string) error {
 	rulesDir := flags.String("rules", "rules", "rules directory")
 	format := flags.String("format", "pretty", "stdout format: pretty|ecs")
 	baselineFile := flags.String("baseline", "", "anomaly baseline to score events against (enables anomaly.score)")
+	eventStore := flags.String("event-store", "", "also record replayed events into an event lake: memory|sqlite (empty = stdout only)")
+	eventDSN := flags.String("event-dsn", "", "event lake path when --event-store=sqlite (point a hunting argus-server at the same file)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -41,7 +43,15 @@ func runReplay(args []string) error {
 	}
 	logger := logging.New(os.Stderr, "info", "text")
 	engine := detect.NewEngine(rules, detect.NewCorrelator(replayWindow, replayThreshold))
-	sink := output.NewStdout(os.Stdout, *format)
+
+	var sink output.Sink = output.NewStdout(os.Stdout, *format)
+	if *eventStore != "" {
+		lakeSink, err := output.NewEventStore(*eventStore, *eventDSN)
+		if err != nil {
+			return fmt.Errorf("open event lake: %w", err)
+		}
+		sink = output.NewMultiSink(sink, lakeSink) // tee: print and record to the lake
+	}
 
 	var scorer pipeline.Scorer
 	if *baselineFile != "" {

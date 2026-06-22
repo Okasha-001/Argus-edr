@@ -94,14 +94,26 @@
 
         <section id="investigation" class="screen" aria-label="Investigation">
           <div class="toolbar">
-            <input id="i-host" placeholder="host to reconstruct" aria-label="Host" />
-            <button class="btn" id="i-load">Build chain</button>
-            <span class="muted">Reconstructs a host's alert chain · graph view lands in Phase 15</span>
+            <input id="i-host" placeholder="host to investigate" aria-label="Host" />
+            <button class="btn" id="i-load">Investigate</button>
+            <button class="btn ghost" id="i-newcase">New case</button>
+            <span class="muted" id="i-meta">Reconstruct a host's attack graph and timeline, then open a case.</span>
           </div>
           <div class="grid-2">
-            <div id="timeline" class="timeline"></div>
-            <div id="triage" class="card"></div>
+            <div>
+              <h2 class="section-title">Attack graph</h2>
+              <div id="graph" class="graph-wrap"><div class="empty">Enter a host to reconstruct its attack graph.</div></div>
+              <div id="graph-legend" class="graph-legend"></div>
+            </div>
+            <div>
+              <h2 class="section-title">Timeline</h2>
+              <div id="timeline" class="timeline"></div>
+            </div>
           </div>
+          <h2 class="section-title">Cases</h2>
+          <div class="table-wrap"><table><thead><tr>
+            <th>ID</th><th>Title</th><th>Status</th><th>Assignee</th><th>Sev</th><th>Host</th><th>Updated</th>
+          </tr></thead><tbody id="cases-body"></tbody></table></div>
         </section>
 
         <section id="detections" class="screen" aria-label="Detections">

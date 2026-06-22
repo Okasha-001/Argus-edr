@@ -15,6 +15,7 @@ import (
 	"github.com/argus-edr/argus/internal/fleet/fleetpb"
 	"github.com/argus-edr/argus/internal/triage"
 	"github.com/argus-edr/argus/internal/version"
+	"github.com/argus-edr/argus/server/cases"
 	"github.com/argus-edr/argus/server/correlate"
 	"github.com/argus-edr/argus/server/ruleset"
 	"github.com/argus-edr/argus/server/store"
@@ -56,6 +57,10 @@ type adminAPI struct {
 	// pretending an empty result.
 	lake eventstore.Store
 
+	// cases holds investigation cases. It is in-memory by default (single-binary
+	// mode); the Store interface is ready for a durable backend.
+	cases cases.Store
+
 	stream  *broadcaster
 	metrics *serverMetrics
 	audit   *auditLog
@@ -68,6 +73,7 @@ func newAdminAPI(backing store.Store, rules *ruleset.Provider, ttl time.Duration
 	return &adminAPI{
 		store: backing, rules: rules, ttl: ttl, authz: rbac, issuer: issuer, lake: lake, logger: logger,
 		summarizer: triage.New(triage.Config{}, logger), // template by default; serve.go may upgrade
+		cases:      cases.NewMemory(),
 		stream:     newBroadcaster(), metrics: newServerMetrics(backing),
 		audit: newAuditLog(nil, nil, logger), // serve.go upgrades this to a signed, file-backed log
 	}
@@ -101,6 +107,19 @@ func (a *adminAPI) mux() http.Handler {
 	mux.HandleFunc("GET /api/hunt/fields", a.handleHuntFields)
 	mux.HandleFunc("POST /api/hunt", a.handleHunt)
 	mux.HandleFunc("POST /api/hunt/to-rule", a.handleHuntToRule)
+	// Investigation reconstructs a host's attack graph from the lake (read-only).
+	mux.HandleFunc("GET /api/investigate/graph", a.handleInvestigateGraph)
+	// Case management is analyst workflow: it groups alerts into investigations and
+	// never touches the fleet, so — like the read endpoints — it stays open in
+	// single-binary mode. Every mutation is still written to the audit log.
+	mux.HandleFunc("GET /api/cases", a.handleCases)
+	mux.HandleFunc("POST /api/cases", a.handleCreateCase)
+	mux.HandleFunc("GET /api/cases/{id}", a.handleCaseByID)
+	mux.HandleFunc("POST /api/cases/{id}/assign", a.handleAssignCase)
+	mux.HandleFunc("POST /api/cases/{id}/status", a.handleCaseStatus)
+	mux.HandleFunc("POST /api/cases/{id}/comments", a.handleCaseComment)
+	mux.HandleFunc("POST /api/cases/{id}/evidence", a.handleCaseEvidence)
+	mux.HandleFunc("GET /api/cases/{id}/report", a.handleCaseReport)
 	mux.Handle("GET /metrics", a.metrics.registry.Handler())
 	// State-changing endpoints are authorized by role: enqueuing a command (which
 	// reaches an agent as kill/quarantine/posture) needs an operator; reloading the

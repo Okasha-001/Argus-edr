@@ -2,9 +2,16 @@ package ui
 
 import (
 	"io/fs"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+// w3Namespace matches the W3C XML namespace URIs (e.g. the SVG namespace passed
+// to document.createElementNS). These are non-resolvable identifiers, never
+// fetched over the network, so they are not "external assets" and are stripped
+// before the external-reference check below.
+var w3Namespace = regexp.MustCompile(`https?://www\.w3\.org/\S*`)
 
 var consoleAssets = []string{"index.html", "app.css", "app.js"}
 
@@ -32,7 +39,7 @@ func TestNoExternalAssets(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
 		}
-		text := string(data)
+		text := w3Namespace.ReplaceAllString(string(data), "")
 		for _, bad := range forbidden {
 			if strings.Contains(text, bad) {
 				t.Errorf("%s contains external reference %q (violates zero phone-home)", name, bad)

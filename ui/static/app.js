@@ -325,19 +325,23 @@ function saveAsRule() {
   $("#overlay").classList.add("show");
 }
 
-// ---- investigation -------------------------------------------------------
+// ---- investigation: attack graph + timeline + cases ----------------------
 async function renderInvestigation() {
+  renderCases();
   const host = $("#i-host").value.trim();
+  if (!host) return;
+  await Promise.all([renderGraph(host), renderTimeline(host)]);
+}
+
+async function renderTimeline(host) {
   const tl = $("#timeline");
-  if (!host) { tl.replaceChildren(el("div", { class: "empty", text: "Enter a host to reconstruct its alert chain." })); return; }
   let rows = [];
   try { rows = await getJSON("/api/alerts?limit=500&host=" + encodeURIComponent(host)); } catch (_) { return; }
   if (!rows.length) { tl.replaceChildren(el("div", { class: "empty", text: "No alerts for " + host })); return; }
-  $("#triage").replaceChildren(el("div", { class: "muted", text: "Select an incident node to triage." }));
   tl.replaceChildren(...rows.map((a) => {
-    const proc = pick(a, "ProcessExecutable", "process_executable", "ProcessName", "process_name") || "process";
     const tech = pick(a, "TechniqueID", "technique_id");
     const dest = pick(a, "DestinationIP", "destination_ip");
+    const proc = pick(a, "ProcessName", "process_name") || "process";
     const chain = [proc, tech && `▶ ${tech}`, dest && `▶ ${dest}`].filter(Boolean).join("  ");
     const body = el("div", {},
       sevBadge(pick(a, "Severity", "severity")),
@@ -346,12 +350,218 @@ async function renderInvestigation() {
       el("div", { class: "chain", text: chain }),
     );
     if (pick(a, "IsIncident", "is_incident")) {
-      const btn = el("button", { class: "btn ghost", text: "Triage" });
-      btn.addEventListener("click", () => renderTriageInto("#triage", pick(a, "ID", "id")));
-      body.append(btn);
+      const t = el("button", { class: "btn ghost", text: "Triage" });
+      t.addEventListener("click", () => openAlertDrawer(a));
+      body.append(t);
     }
     return el("div", { class: "node" }, el("div", { class: "ts", text: fmtTime(pick(a, "Time", "time")) }), body);
   }));
+}
+
+// ---- attack graph (SVG, dependency-free) ---------------------------------
+const SVGNS = "http://www.w3.org/2000/svg";
+const svg = (tag, attrs = {}, ...kids) => {
+  const node = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  for (const kid of kids) if (kid != null) node.append(kid);
+  return node;
+};
+const graphColors = { process: "var(--accent)", file: "var(--sev-medium)", network: "var(--sev-low)" };
+
+async function renderGraph(host) {
+  const wrap = $("#graph");
+  wrap.replaceChildren(el("div", { class: "muted", text: "Building graph…" }));
+  let graph;
+  try { graph = await getJSON("/api/investigate/graph?host=" + encodeURIComponent(host)); }
+  catch (e) { wrap.replaceChildren(el("div", { class: "empty", text: String(e.message || e) })); return; }
+  if (!graph.nodes || !graph.nodes.length) {
+    wrap.replaceChildren(el("div", { class: "empty", text: "No events in the lake for " + host + ". Wire --event-store to the agent's lake." }));
+    $("#graph-legend").replaceChildren();
+    return;
+  }
+  drawGraph(wrap, graph);
+  $("#graph-legend").replaceChildren(...Object.entries(graphColors).map(([kind, color]) =>
+    el("span", { class: "legend-item" }, svgDot(color), el("span", { text: kind }))));
+}
+function svgDot(color) {
+  const s = svg("svg", { width: 10, height: 10, class: "legend-dot" });
+  s.append(svg("circle", { cx: 5, cy: 5, r: 5, fill: color }));
+  return s;
+}
+
+// layerNodes assigns each node an x-layer: root processes at 0, spawned children
+// one deeper than their parent, and file/network nodes one past the process that
+// touched them — a left-to-right reading of how the attack unfolded.
+function layerNodes(graph) {
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const parent = new Map();
+  for (const e of graph.edges) if (e.kind === "spawned") parent.set(e.target, e.source);
+  const touch = new Map();
+  for (const e of graph.edges) if (e.kind !== "spawned" && !touch.has(e.target)) touch.set(e.target, e.source);
+  const layer = new Map();
+  const depthOf = (id, seen) => {
+    if (layer.has(id)) return layer.get(id);
+    if (seen.has(id)) return 0; // cycle guard
+    seen.add(id);
+    const src = parent.get(id) ?? touch.get(id);
+    const d = src && byId.has(src) ? depthOf(src, seen) + 1 : 0;
+    layer.set(id, d);
+    return d;
+  };
+  for (const n of graph.nodes) depthOf(n.id, new Set());
+  return layer;
+}
+
+function drawGraph(wrap, graph) {
+  const layer = layerNodes(graph);
+  const cols = new Map();
+  for (const n of graph.nodes) {
+    const depth = layer.get(n.id);
+    if (!cols.has(depth)) cols.set(depth, []);
+    cols.get(depth).push(n);
+  }
+  const NW = 150, NH = 40, GX = 70, GY = 18;
+  const pos = new Map();
+  let maxRow = 0;
+  for (const [col, nodes] of cols) {
+    nodes.forEach((n, row) => {
+      pos.set(n.id, { x: col * (NW + GX) + 10, y: row * (NH + GY) + 10 });
+      maxRow = Math.max(maxRow, row);
+    });
+  }
+  const width = (Math.max(...cols.keys()) + 1) * (NW + GX) + 10;
+  const height = (maxRow + 1) * (NH + GY) + 10;
+  const s = svg("svg", { class: "graph-svg", viewBox: `0 0 ${width} ${height}`, width, height });
+  s.append(svg("defs", {}, (() => {
+    const m = svg("marker", { id: "arrow", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" });
+    m.append(svg("path", { d: "M0,0 L10,5 L0,10 z", fill: "var(--border)" }));
+    return m;
+  })()));
+  for (const e of graph.edges) {
+    const a = pos.get(e.source), b = pos.get(e.target);
+    if (!a || !b) continue;
+    const x1 = a.x + NW, y1 = a.y + NH / 2, x2 = b.x, y2 = b.y + NH / 2;
+    const mx = (x1 + x2) / 2;
+    s.append(svg("path", { d: `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`, class: "edge", "marker-end": "url(#arrow)" }));
+    s.append(svg("text", { x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 4, class: "edge-label", "text-anchor": "middle" }, document.createTextNode(e.kind)));
+  }
+  for (const n of graph.nodes) {
+    const p = pos.get(n.id);
+    const g = svg("g", { class: "gnode", transform: `translate(${p.x},${p.y})`, tabindex: "0", role: "button" });
+    const sev = n.alerting ? sevText(n.severity) : "";
+    const rect = svg("rect", { width: NW, height: NH, rx: 8, class: "gnode-box" + (n.alerting ? " alerting" : ""),
+      style: `stroke:${n.alerting ? `var(--sev-${sev})` : graphColors[n.kind] || "var(--border)"}` });
+    g.append(rect);
+    g.append(svg("circle", { cx: 12, cy: NH / 2, r: 4, fill: graphColors[n.kind] || "var(--muted)" }));
+    const label = svg("text", { x: 24, y: NH / 2 - 2, class: "gnode-label" }, document.createTextNode(clip(n.label, 16)));
+    g.append(label);
+    const sub = svg("text", { x: 24, y: NH / 2 + 12, class: "gnode-sub" },
+      document.createTextNode((n.techniques || []).join(" ") || n.kind));
+    g.append(sub);
+    g.addEventListener("click", () => openGraphNodeDrawer(n));
+    s.append(g);
+  }
+  wrap.replaceChildren(s);
+}
+const clip = (text, n) => (text && text.length > n ? text.slice(0, n - 1) + "…" : text || "");
+function openGraphNodeDrawer(n) {
+  const dl = el("dl", { class: "kv" });
+  const rows = [["Kind", n.kind], ["Label", n.label], ["PID", n.pid], ["Detail", n.detail],
+    ["Severity", n.alerting ? sevText(n.severity) : ""], ["Techniques", (n.techniques || []).join(", ")]];
+  for (const [k, v] of rows) if (v) dl.append(el("dt", { text: k }), el("dd", { class: "mono", text: String(v) }));
+  $("#drawer").replaceChildren(
+    el("button", { class: "icon-btn close", "aria-label": "Close" }, document.createTextNode("✕")),
+    el("h3", { text: n.label || "Node" }), dl);
+  $("#drawer .close").addEventListener("click", closeDrawer);
+  $("#drawer").classList.add("show");
+  $("#overlay").classList.add("show");
+}
+
+// ---- cases ---------------------------------------------------------------
+async function renderCases() {
+  let list = [];
+  try { list = await getJSON("/api/cases"); } catch (_) { return; }
+  const body = $("#cases-body");
+  if (!list.length) { body.replaceChildren(el("tr", {}, el("td", { colspan: "7", class: "muted", text: "No cases yet." }))); return; }
+  body.replaceChildren(...list.map((c) => {
+    const row = el("tr", { class: "clickable" },
+      el("td", { class: "mono", text: c.id }),
+      el("td", { class: "wrap", text: c.title }),
+      el("td", { text: c.status }),
+      el("td", { text: c.assignee || "—" }),
+      el("td", {}, sevBadge(c.severity)),
+      el("td", { text: c.host || "—" }),
+      el("td", { text: fmtTime(c.updated) }),
+    );
+    row.addEventListener("click", () => openCaseDrawer(c.id));
+    return row;
+  }));
+}
+
+function newCaseForm() {
+  const host = $("#i-host").value.trim();
+  const field = (id, label, value) => el("label", { class: "form-row" },
+    el("span", { text: label }), el("input", { id, type: "text", value: value || "" }));
+  const form = el("div", { class: "rule-form" },
+    field("nc-title", "Title", host ? "Investigation on " + host : ""),
+    field("nc-sev", "Severity", "high"),
+    field("nc-host", "Host", host));
+  const create = el("button", { class: "btn", text: "Create case" });
+  create.addEventListener("click", async () => {
+    try {
+      const c = await postJSON("/api/cases", {
+        title: $("#nc-title").value.trim(), severity: $("#nc-sev").value.trim(), host: $("#nc-host").value.trim(),
+      });
+      closeDrawer(); toast("Opened " + c.id); renderCases();
+    } catch (e) { toast(String(e.message || e)); }
+  });
+  $("#drawer").replaceChildren(
+    el("button", { class: "icon-btn close", "aria-label": "Close" }, document.createTextNode("✕")),
+    el("h3", { text: "New case" }), form, create);
+  $("#drawer .close").addEventListener("click", closeDrawer);
+  $("#drawer").classList.add("show");
+  $("#overlay").classList.add("show");
+}
+
+async function openCaseDrawer(id) {
+  let c;
+  try { c = await getJSON("/api/cases/" + encodeURIComponent(id)); } catch (_) { return; }
+  const act = async (path, body, ok) => {
+    try { await postJSON("/api/cases/" + id + path, body); toast(ok); openCaseDrawer(id); renderCases(); }
+    catch (e) { toast(String(e.message || e)); }
+  };
+  const dl = el("dl", { class: "kv" });
+  for (const [k, v] of [["Status", c.status], ["Assignee", c.assignee], ["Severity", c.severity], ["Host", c.host], ["Evidence", (c.evidence || []).length + " alert(s)"]])
+    if (v) dl.append(el("dt", { text: k }), el("dd", { class: "mono", text: String(v) }));
+
+  const statusSel = el("select", {}, ...["open", "triage", "closed"].map((s) =>
+    el("option", s === c.status ? { value: s, selected: "selected" } : { value: s }, document.createTextNode(s))));
+  statusSel.addEventListener("change", () => act("/status", { status: statusSel.value }, "Status updated"));
+  const assignIn = el("input", { type: "text", placeholder: "assignee", value: c.assignee || "" });
+  const assignBtn = el("button", { class: "btn ghost", text: "Assign" });
+  assignBtn.addEventListener("click", () => act("/assign", { assignee: assignIn.value.trim() }, "Assigned"));
+  const commentIn = el("input", { type: "text", placeholder: "add a note" });
+  const commentBtn = el("button", { class: "btn ghost", text: "Comment" });
+  commentBtn.addEventListener("click", () => commentIn.value.trim() && act("/comments", { author: "analyst", body: commentIn.value.trim() }, "Note added"));
+  const reportBtn = el("button", { class: "btn", text: "Generate report" });
+  const reportOut = el("pre", { class: "draft", style: "display:none" });
+  reportBtn.addEventListener("click", async () => {
+    try { const r = await getJSON("/api/cases/" + id + "/report"); reportOut.textContent = r.report; reportOut.style.display = "block"; }
+    catch (e) { toast(String(e.message || e)); }
+  });
+  const comments = el("div", { class: "case-notes" }, ...(c.comments || []).map((cm) =>
+    el("div", { class: "note" }, el("span", { class: "muted mono", text: fmtTime(cm.time) + " " + cm.author + ": " }), el("span", { text: cm.body }))));
+
+  $("#drawer").replaceChildren(
+    el("button", { class: "icon-btn close", "aria-label": "Close" }, document.createTextNode("✕")),
+    el("h3", { text: c.id + " · " + c.title }), dl,
+    el("div", { class: "form-row" }, el("span", { text: "Status" }), statusSel),
+    el("div", { class: "toolbar" }, assignIn, assignBtn),
+    el("div", { class: "toolbar" }, commentIn, commentBtn),
+    comments, reportBtn, reportOut);
+  $("#drawer .close").addEventListener("click", closeDrawer);
+  $("#drawer").classList.add("show");
+  $("#overlay").classList.add("show");
 }
 
 // ---- detections ----------------------------------------------------------
@@ -499,6 +709,7 @@ function wire() {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); runHunt(); }
   });
   $("#i-load").addEventListener("click", renderInvestigation);
+  $("#i-newcase").addEventListener("click", newCaseForm);
   $("#r-filter").addEventListener("input", drawRules);
   $("#cmdk-open").addEventListener("click", openCmdk);
   $("#cmdk-input").addEventListener("input", drawCmdk);
