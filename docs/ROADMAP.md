@@ -54,18 +54,30 @@ line count; the phases add real capability, not padding.
   `docs/PERFORMANCE.md`.
 - **Response:** graduated response (alert→throttle→block→kill) and egress
   block/quarantine already done; tc-based traffic shaping next.
-- **Hardening:** documented end-to-end host-overhead % under a live, rooted
-  workload (per-stage benchmarks + parser fuzzing already done — see
-  `docs/PERFORMANCE.md`); a kernel-version CI matrix (5.8/5.15/6.1/6.8) with a
-  load/verifier smoke test.
-- **Advanced:** anomaly baselining (rarity/Isolation Forest), optional YARA,
-  anti-rootkit and eBPF-on-eBPF detection.
+- **Hardening:** a kernel-version CI matrix (5.8/5.15/6.1/6.8) with a
+  load/verifier smoke test is done (`.github/workflows/kernel-matrix.yml`,
+  `scripts/verifier-smoke.sh`, `docs/PACKAGING.md`). Remaining: a documented
+  end-to-end host-overhead % under a live, rooted workload (per-stage benchmarks +
+  parser fuzzing already done — see `docs/PERFORMANCE.md`).
+- **Advanced:** anomaly baselining (rarity/Isolation Forest) and a pure-Go YARA
+  engine are done; next, anti-rootkit and eBPF-on-eBPF detection.
 - **Self-protection:** done — LSM `task_kill` and `ptrace` deny guard the agent
   (tamper alerts → R-0074), and a userspace binary-integrity check and liveness
   watchdog (R-SELF-*). Remaining: a kernel watchdog that survives a frozen agent.
-- **Fleet, next:** a database-backed store (the interface is ready), RBAC and a
-  signed audit log on the admin API, per-agent certificate issuance/rotation, and
-  policy (not just rule) distribution.
-- **UI:** a web console for fleet, live alerts and investigation timelines, built
-  on the admin API.
-- **Supply chain:** deb/rpm packaging, SBOM, signed releases, Helm chart.
+- **Fleet:** done — a SQLite-backed durable store (interface ready for Postgres),
+  RBAC (viewer/operator/admin) and a tamper-evident signed audit log on the admin
+  API, per-agent certificate rotation without re-enrolment, and full policy (not
+  just rule) distribution in the bundle. See `docs/FLEET.md` and
+  `docs/CONTROL_PLANE.md`. Remaining: cert revocation (CRL/OCSP), HA control plane.
+- **UI:** done — an embedded, dependency-free web console for fleet, live alerts
+  (SSE) and incident timelines, built on the admin API (`docs/CONTROL_PLANE.md`).
+- **LLM-assisted triage:** done — `internal/triage` turns an incident into a
+  summary + severity + containment + optional rule draft, offline by default with
+  an opt-in Claude provider, surfaced on the incident timeline. See `docs/TRIAGE.md`.
+- **Supply chain:** done — deb/rpm packaging (nfpm), SBOM (syft), cosign-signed
+  releases, and a Helm chart. See `docs/PACKAGING.md`.
+- **Cross-platform:** the event source is now the only platform-specific layer; an
+  experimental Windows process source (`internal/winsource`) fills the same
+  `model.Event` and reuses the whole detection/response/fleet stack. See
+  `docs/CROSS_PLATFORM.md`. Next: ETW providers for network/file/registry and
+  Windows enforcement.
