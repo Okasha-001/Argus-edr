@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -65,6 +66,12 @@ func (b *broadcaster) publish(payload []byte) {
 // unrenderable alert must not disturb the stream.
 func (a *adminAPI) recordAlert(record store.AlertRecord) {
 	a.metrics.alerts.Inc()
+	// Feed the playbook engine off the ingestion path so a slow enforce step (an
+	// HTTP notify, a hunt) never stalls alert reporting. It is a no-op while the
+	// engine is disabled, which is the default.
+	if a.soar != nil {
+		go a.soar.Observe(context.Background(), toSoarAlert(record))
+	}
 	payload, err := json.Marshal(record)
 	if err != nil {
 		return

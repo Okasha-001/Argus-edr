@@ -22,6 +22,7 @@ import (
 	"github.com/argus-edr/argus/internal/eventstore"
 	"github.com/argus-edr/argus/internal/fleet"
 	"github.com/argus-edr/argus/internal/fleet/fleetpb"
+	"github.com/argus-edr/argus/internal/integrations"
 	"github.com/argus-edr/argus/internal/triage"
 	"github.com/argus-edr/argus/internal/version"
 	"github.com/argus-edr/argus/server/api"
@@ -58,6 +59,13 @@ func runServe(args []string) error {
 	dsn := flags.String("dsn", "", "data source for --store sqlite (database file path)")
 	eventStoreKind := flags.String("event-store", eventstore.BackendMemory, "event lake for threat hunting: memory (ephemeral) or sqlite (point --event-dsn at the lake agents write to)")
 	eventDSN := flags.String("event-dsn", "", "data source for --event-store sqlite (event lake file path; share it with the agents' eventstore output)")
+	soarEnabled := flags.Bool("soar", false, "enable the SOAR playbook engine (off by default; playbooks still default to dry-run)")
+	notifyWebhook := flags.String("notify-webhook", "", "SOAR: POST notifications to this webhook URL (optional)")
+	notifySlack := flags.String("notify-slack", "", "SOAR: Slack/Mattermost incoming-webhook URL (optional)")
+	notifySyslog := flags.String("notify-syslog", "", "SOAR: send notifications to this syslog collector host:port over UDP (optional)")
+	notifySMTP := flags.String("notify-smtp", "", "SOAR: SMTP relay host:port for email notifications (optional)")
+	notifyFrom := flags.String("notify-from", "", "SOAR: email From address (with --notify-smtp)")
+	notifyTo := flags.String("notify-to", "", "SOAR: comma-separated email recipients (with --notify-smtp)")
 	ttl := flags.Duration("heartbeat-ttl", 90*time.Second, "treat an agent offline after this long without a heartbeat")
 	window := flags.Duration("correlate-window", 5*time.Minute, "cross-host correlation window")
 	minHosts := flags.Int("correlate-min-hosts", 3, "distinct hosts before a cross-host signal fires")
@@ -119,6 +127,18 @@ func runServe(args []string) error {
 		admin.audit = newAuditLog(sink, []byte(*auditKey), logger)
 		logger.Info("admin audit log", "file", *auditFile, "signed", *auditKey != "")
 	}
+	notifier := integrations.NewMulti(
+		integrations.NewWebhook(*notifyWebhook),
+		integrations.NewSlack(*notifySlack),
+		integrations.NewSyslog("udp", *notifySyslog),
+		integrations.NewSMTP(*notifySMTP, *notifyFrom, splitComma(*notifyTo), "", ""),
+	)
+	admin.soar.SetNotifier(notifier)
+	admin.soar.SetEnabled(*soarEnabled)
+	if *soarEnabled {
+		logger.Info("SOAR engine enabled", "notifiers", notifier.Names())
+	}
+
 	reloadOnHangup(rules, logger)
 	if *token == "" {
 		logger.Warn("open enrollment: no --token set, any agent with a valid client certificate can enroll")
@@ -175,6 +195,18 @@ func consoleHandler(adminHandler http.Handler, assets fs.FS) http.Handler {
 
 func isAPIPath(path string) bool {
 	return strings.HasPrefix(path, "/api/") || path == "/healthz" || path == "/version"
+}
+
+// splitComma parses a comma-separated flag (e.g. email recipients) into a trimmed,
+// non-empty slice.
+func splitComma(value string) []string {
+	var out []string
+	for _, part := range strings.Split(value, ",") {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 type serveTargets struct {

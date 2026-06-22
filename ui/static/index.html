@@ -16,6 +16,7 @@
         <a data-route="hunt"><span class="ic">⌕</span> Hunt</a>
         <a data-route="investigation"><span class="ic">⌖</span> Investigation</a>
         <a data-route="detections"><span class="ic">❡</span> Detections</a>
+        <a data-route="automation"><span class="ic">⚙</span> Automation</a>
         <a data-route="fleet"><span class="ic">▤</span> Fleet</a>
       </nav>
       <div class="spacer"></div>
@@ -129,6 +130,20 @@
           <div class="table-wrap"><table><thead><tr>
             <th>ID</th><th>Name</th><th>Sev</th><th>Technique</th><th>Tactic</th><th>Risk</th><th>On</th>
           </tr></thead><tbody id="rules-body"></tbody></table></div>
+        </section>
+
+        <section id="automation" class="screen" aria-label="Automation">
+          <div class="toolbar">
+            <span id="soar-status" class="pill off">engine: off</span>
+            <button class="btn ghost" id="soar-toggle">Enable engine</button>
+            <button class="btn" id="pb-new">New playbook</button>
+            <span class="muted">Playbooks default to dry-run · host actions stay clamped by each agent's response mode</span>
+          </div>
+          <div class="table-wrap"><table><thead><tr>
+            <th>ID</th><th>Name</th><th>Mode</th><th>Trigger</th><th>Steps</th><th></th>
+          </tr></thead><tbody id="pb-body"></tbody></table></div>
+          <h2 class="section-title">Recent runs</h2>
+          <div id="soar-runs"></div>
         </section>
 
         <section id="fleet" class="screen" aria-label="Fleet">

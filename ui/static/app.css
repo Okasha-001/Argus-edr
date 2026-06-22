@@ -236,6 +236,13 @@ pre.draft { background: var(--bg); border: 1px solid var(--border); border-radiu
 .case-notes { margin: var(--s-3) 0; display: flex; flex-direction: column; gap: var(--s-2); }
 .case-notes .note { font-size: 13px; border-left: 2px solid var(--border); padding-left: var(--s-3); }
 
+/* automation / SOAR */
+.btn.sm { padding: 2px 8px; font-size: 12px; font-weight: 500; margin-left: var(--s-1); }
+.chip-x { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 2px; font-size: 11px; }
+.chip-x:hover { color: var(--sev-critical); }
+.card.run { margin-bottom: var(--s-3); }
+.card.run .steps { margin: var(--s-2) 0 0; }
+
 /* ---- command palette --------------------------------------------------- */
 .cmdk { position: fixed; inset: 0; display: none; align-items: flex-start; justify-content: center; padding-top: 12vh; background: rgba(0,0,0,0.5); z-index: 30; }
 .cmdk.show { display: flex; }

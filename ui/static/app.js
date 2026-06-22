@@ -49,6 +49,7 @@ const routes = {
   hunt: { title: "Hunt", render: renderHunt },
   investigation: { title: "Investigation", render: renderInvestigation },
   detections: { title: "Detections", render: renderDetections },
+  automation: { title: "Automation", render: renderAutomation },
   fleet: { title: "Fleet", render: renderFleet },
 };
 let currentRoute = "overview";
@@ -564,6 +565,155 @@ async function openCaseDrawer(id) {
   $("#overlay").classList.add("show");
 }
 
+// ---- automation (SOAR) ---------------------------------------------------
+let soarEnabled = false;
+async function renderAutomation() {
+  try {
+    const status = await getJSON("/api/soar/status");
+    soarEnabled = !!status.enabled;
+  } catch (_) {}
+  const pill = $("#soar-status");
+  pill.textContent = "engine: " + (soarEnabled ? "on" : "off");
+  pill.className = "pill " + (soarEnabled ? "on" : "off");
+  $("#soar-toggle").textContent = soarEnabled ? "Disable engine" : "Enable engine";
+
+  let playbooks = [];
+  try { playbooks = await getJSON("/api/playbooks"); } catch (_) {}
+  const body = $("#pb-body");
+  if (!playbooks.length) {
+    body.replaceChildren(el("tr", {}, el("td", { colspan: "6", class: "muted", text: "No playbooks yet." })));
+  } else {
+    body.replaceChildren(...playbooks.map(playbookRow));
+  }
+  renderRuns();
+}
+function triggerText(t) {
+  const parts = [];
+  if (t.severities && t.severities.length) parts.push(t.severities.join("/"));
+  if (t.techniques && t.techniques.length) parts.push(t.techniques.join(","));
+  if (t.rule_ids && t.rule_ids.length) parts.push(t.rule_ids.join(","));
+  if (t.min_risk) parts.push("risk≥" + t.min_risk);
+  if (t.incidents_only) parts.push("incidents");
+  return parts.join(" · ") || "any alert";
+}
+function playbookRow(p) {
+  const modeClass = p.mode === "enforce" ? "sev-high" : p.mode === "dry-run" ? "sev-low" : "muted";
+  const actions = el("td", {});
+  const test = el("button", { class: "btn ghost sm", text: "Test" });
+  test.addEventListener("click", () => testPlaybook(p.id));
+  const edit = el("button", { class: "btn ghost sm", text: "Edit" });
+  edit.addEventListener("click", () => playbookForm(p));
+  const del = el("button", { class: "btn ghost sm", text: "✕" });
+  del.addEventListener("click", () => deletePlaybook(p.id));
+  actions.append(test, edit, del);
+  return el("tr", {},
+    el("td", { class: "mono", text: p.id }),
+    el("td", { class: "wrap", text: p.name }),
+    el("td", {}, el("span", { class: modeClass, text: p.mode })),
+    el("td", { class: "muted", text: triggerText(p.trigger || {}) }),
+    el("td", { class: "mono", text: (p.steps || []).map((s) => s.type).join(", ") }),
+    actions);
+}
+async function toggleSOAR() {
+  try { await postJSON("/api/soar/enable", { enabled: !soarEnabled }); renderAutomation(); }
+  catch (e) { toast(String(e.message || e)); }
+}
+async function testPlaybook(id) {
+  try {
+    const run = await postJSON("/api/playbooks/" + id + "/test", {});
+    const lines = (run.outcomes || []).map((o) => (o.executed ? "✓ " : "○ ") + o.detail).join("\n");
+    openTextDrawer("Test run · " + run.mode, lines || "No outcomes (no alert matched).");
+    renderRuns();
+  } catch (e) { toast(String(e.message || e)); }
+}
+async function deletePlaybook(id) {
+  try { await fetch("/api/playbooks/" + id, { method: "DELETE" }); renderAutomation(); }
+  catch (e) { toast(String(e.message || e)); }
+}
+async function renderRuns() {
+  let runs = [];
+  try { runs = await getJSON("/api/soar/runs"); } catch (_) {}
+  const wrap = $("#soar-runs");
+  if (!runs.length) { wrap.replaceChildren(el("div", { class: "empty", text: "No playbook runs yet." })); return; }
+  wrap.replaceChildren(...runs.map((run) => el("div", { class: "card run" },
+    el("div", {}, el("strong", { text: run.playbook + " " }), el("span", { class: "muted", text: run.mode + " · " + fmtTime(run.time) })),
+    el("ul", { class: "steps" }, ...(run.outcomes || []).map((o) =>
+      el("li", { class: o.executed ? "" : "muted", text: (o.executed ? "✓ " : "○ ") + o.detail + (o.error ? " — " + o.error : "") })))
+  )));
+}
+
+const STEP_TYPES = ["notify", "open_case", "run_hunt", "kill_process", "quarantine"];
+function playbookForm(existing) {
+  const steps = existing ? existing.steps.map((s) => ({ ...s })) : [];
+  const field = (id, label, value) => el("label", { class: "form-row" },
+    el("span", { text: label }), el("input", { id, type: "text", value: value || "" }));
+  const modeSel = el("select", { id: "pb-mode" }, ...["off", "dry-run", "enforce"].map((m) =>
+    el("option", existing && existing.mode === m ? { value: m, selected: "selected" } : { value: m }, document.createTextNode(m))));
+  const stepList = el("div", { class: "chips", id: "pb-steps" });
+  const drawStepChips = () => stepList.replaceChildren(...steps.map((s, i) => {
+    const chip = el("span", { class: "chip klass" }, document.createTextNode(s.type + (s.query ? " (" + s.query + ")" : "") + " "));
+    const x = el("button", { class: "chip-x", type: "button", text: "✕" });
+    x.addEventListener("click", () => { steps.splice(i, 1); drawStepChips(); });
+    chip.append(x);
+    return chip;
+  }));
+  drawStepChips();
+  const addSel = el("select", { id: "pb-addstep" }, ...STEP_TYPES.map((t) => el("option", { value: t }, document.createTextNode(t))));
+  const addBtn = el("button", { class: "btn ghost", text: "+ step" });
+  addBtn.addEventListener("click", () => {
+    const type = addSel.value;
+    const step = { type };
+    if (type === "run_hunt") { step.query = prompt("ARQL query for this hunt step:") || ""; if (!step.query) return; }
+    steps.push(step); drawStepChips();
+  });
+  const save = el("button", { class: "btn", text: existing ? "Save playbook" : "Create playbook" });
+  save.addEventListener("click", async () => {
+    const payload = {
+      name: $("#pb-name").value.trim(),
+      mode: $("#pb-mode").value,
+      trigger: {
+        severities: splitList($("#pb-sev").value),
+        techniques: splitList($("#pb-tech").value),
+        min_risk: parseInt($("#pb-risk").value, 10) || 0,
+      },
+      steps,
+    };
+    try {
+      if (existing) await fetchJSON("PUT", "/api/playbooks/" + existing.id, payload);
+      else await postJSON("/api/playbooks", payload);
+      closeDrawer(); renderAutomation();
+    } catch (e) { toast(String(e.message || e)); }
+  });
+  $("#drawer").replaceChildren(
+    el("button", { class: "icon-btn close", "aria-label": "Close" }, document.createTextNode("✕")),
+    el("h3", { text: existing ? "Edit playbook" : "New playbook" }),
+    field("pb-name", "Name", existing && existing.name),
+    el("div", { class: "form-row" }, el("span", { text: "Mode" }), modeSel),
+    field("pb-sev", "Trigger severities (comma)", existing && (existing.trigger.severities || []).join(",")),
+    field("pb-tech", "Trigger techniques (comma)", existing && (existing.trigger.techniques || []).join(",")),
+    field("pb-risk", "Min risk", existing && existing.trigger.min_risk),
+    el("div", { class: "form-row" }, el("span", { text: "Steps" }), stepList, el("div", { class: "toolbar" }, addSel, addBtn)),
+    save);
+  $("#drawer .close").addEventListener("click", closeDrawer);
+  $("#drawer").classList.add("show");
+  $("#overlay").classList.add("show");
+}
+const splitList = (s) => (s || "").split(",").map((x) => x.trim()).filter(Boolean);
+async function fetchJSON(method, url, body) {
+  const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `${url}: ${res.status}`);
+  return data;
+}
+function openTextDrawer(title, text) {
+  $("#drawer").replaceChildren(
+    el("button", { class: "icon-btn close", "aria-label": "Close" }, document.createTextNode("✕")),
+    el("h3", { text: title }), el("pre", { class: "draft", text }));
+  $("#drawer .close").addEventListener("click", closeDrawer);
+  $("#drawer").classList.add("show");
+  $("#overlay").classList.add("show");
+}
+
 // ---- detections ----------------------------------------------------------
 let allRules = [];
 async function renderDetections() {
@@ -659,6 +809,7 @@ const commands = [
   { label: "Go to Hunt", ic: "⌕", run: () => navigate("hunt") },
   { label: "Go to Investigation", ic: "⌖", run: () => navigate("investigation") },
   { label: "Go to Detections", ic: "❡", run: () => navigate("detections") },
+  { label: "Go to Automation", ic: "⚙", run: () => navigate("automation") },
   { label: "Go to Fleet", ic: "▤", run: () => navigate("fleet") },
   { label: "Toggle theme", ic: "◐", run: toggleTheme },
   { label: "Refresh current view", ic: "↻", run: applyRoute },
@@ -744,6 +895,8 @@ function wire() {
   });
   $("#i-load").addEventListener("click", renderInvestigation);
   $("#i-newcase").addEventListener("click", newCaseForm);
+  $("#soar-toggle").addEventListener("click", toggleSOAR);
+  $("#pb-new").addEventListener("click", () => playbookForm(null));
   $("#r-filter").addEventListener("input", drawRules);
   $("#cmdk-open").addEventListener("click", openCmdk);
   $("#cmdk-input").addEventListener("input", drawCmdk);

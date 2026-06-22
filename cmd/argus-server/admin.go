@@ -18,6 +18,7 @@ import (
 	"github.com/argus-edr/argus/server/cases"
 	"github.com/argus-edr/argus/server/correlate"
 	"github.com/argus-edr/argus/server/ruleset"
+	"github.com/argus-edr/argus/server/soar"
 	"github.com/argus-edr/argus/server/store"
 )
 
@@ -61,6 +62,10 @@ type adminAPI struct {
 	// mode); the Store interface is ready for a durable backend.
 	cases cases.Store
 
+	// soar is the response-playbook engine. It is off by default (and every
+	// playbook defaults to dry-run); serve.go enables it and wires notifications.
+	soar *soar.Engine
+
 	stream  *broadcaster
 	metrics *serverMetrics
 	audit   *auditLog
@@ -70,13 +75,23 @@ type adminAPI struct {
 }
 
 func newAdminAPI(backing store.Store, rules *ruleset.Provider, ttl time.Duration, rbac *authz, issuer *fleet.CertIssuer, lake eventstore.Store, logger *slog.Logger) *adminAPI {
-	return &adminAPI{
+	a := &adminAPI{
 		store: backing, rules: rules, ttl: ttl, authz: rbac, issuer: issuer, lake: lake, logger: logger,
 		summarizer: triage.New(triage.Config{}, logger), // template by default; serve.go may upgrade
 		cases:      cases.NewMemory(),
 		stream:     newBroadcaster(), metrics: newServerMetrics(backing),
 		audit: newAuditLog(nil, nil, logger), // serve.go upgrades this to a signed, file-backed log
 	}
+	// The playbook engine reaches the rest of the platform through adapters so
+	// server/soar stays decoupled from the concrete stores. It is off by default.
+	a.soar = soar.NewEngine(soar.Deps{
+		Store:     soar.NewPlaybookStore(),
+		Cases:     caseOpener{a.cases},
+		Commander: commander{a.store},
+		Hunter:    lakeHunter{a.lake},
+		Logger:    logger,
+	})
+	return a
 }
 
 // recordSignal is the OnSignal hook for the gRPC service: it keeps the most
@@ -121,6 +136,18 @@ func (a *adminAPI) mux() http.Handler {
 	mux.HandleFunc("POST /api/cases/{id}/comments", a.handleCaseComment)
 	mux.HandleFunc("POST /api/cases/{id}/evidence", a.handleCaseEvidence)
 	mux.HandleFunc("GET /api/cases/{id}/report", a.handleCaseReport)
+	// SOAR playbooks. Mutations are audited; the engine is off by default, every
+	// playbook defaults to dry-run, and host actions are still clamped by the
+	// agent's response.mode — three independent gates before anything acts.
+	mux.HandleFunc("GET /api/soar/status", a.handleSOARStatus)
+	mux.HandleFunc("POST /api/soar/enable", a.handleSOAREnable)
+	mux.HandleFunc("GET /api/soar/runs", a.handleSOARRuns)
+	mux.HandleFunc("GET /api/playbooks", a.handlePlaybooks)
+	mux.HandleFunc("POST /api/playbooks", a.handleCreatePlaybook)
+	mux.HandleFunc("GET /api/playbooks/{id}", a.handlePlaybookByID)
+	mux.HandleFunc("PUT /api/playbooks/{id}", a.handleUpdatePlaybook)
+	mux.HandleFunc("DELETE /api/playbooks/{id}", a.handleDeletePlaybook)
+	mux.HandleFunc("POST /api/playbooks/{id}/test", a.handleTestPlaybook)
 	mux.Handle("GET /metrics", a.metrics.registry.Handler())
 	// State-changing endpoints are authorized by role: enqueuing a command (which
 	// reaches an agent as kill/quarantine/posture) needs an operator; reloading the
