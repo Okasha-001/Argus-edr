@@ -2,7 +2,10 @@
 // agent. Every sensor decodes into an Event; every detection produces an Alert.
 package model
 
-import "time"
+import (
+	"sort"
+	"time"
+)
 
 // SchemaVersion is bumped whenever the wire/JSON layout changes so the agent
 // and control plane can negotiate compatibility at enrollment.
@@ -73,6 +76,18 @@ func (t EventType) Action() string {
 // events from JSON. The zero EventType signals an unknown action.
 func ParseAction(action string) EventType {
 	return actionTypes[action]
+}
+
+// KnownActions returns every event verb a sensor can emit, sorted. The hunt
+// engine offers them as query classes (`exec where ...`) so an analyst sees the
+// full vocabulary without a hand-kept list.
+func KnownActions() []string {
+	actions := make([]string, 0, len(eventActions))
+	for _, action := range eventActions {
+		actions = append(actions, action)
+	}
+	sort.Strings(actions)
+	return actions
 }
 
 // Process carries the actor of an event plus everything enrichment adds later.

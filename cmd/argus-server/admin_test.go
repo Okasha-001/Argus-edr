@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/argus-edr/argus/internal/eventstore"
 	"github.com/argus-edr/argus/internal/fleet"
 	"github.com/argus-edr/argus/internal/triage"
 	"github.com/argus-edr/argus/server/ruleset"
@@ -34,7 +35,7 @@ func testAdminAPI(t *testing.T, token string) *adminAPI {
 	if err != nil {
 		t.Fatalf("authz: %v", err)
 	}
-	return newAdminAPI(store.NewMemory(), rules, time.Minute, rbac, nil, logger)
+	return newAdminAPI(store.NewMemory(), rules, time.Minute, rbac, nil, eventstore.NewMemory(), logger)
 }
 
 func adminWithAuthz(t *testing.T, rbac *authz) http.Handler {

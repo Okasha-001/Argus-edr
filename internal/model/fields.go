@@ -1,6 +1,7 @@
 package model
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -69,6 +70,18 @@ func (e *Event) Field(path string) (any, bool) {
 func KnownField(path string) bool {
 	_, ok := fieldAccessors[path]
 	return ok
+}
+
+// KnownFields returns every addressable field path in sorted order. The hunt
+// engine uses it to power query autocompletion and to document the schema, so a
+// new accessor above is offered to analysts without a second edit.
+func KnownFields() []string {
+	fields := make([]string, 0, len(fieldAccessors))
+	for path := range fieldAccessors {
+		fields = append(fields, path)
+	}
+	sort.Strings(fields)
+	return fields
 }
 
 func processKey(pid uint32, startTimeNs uint64) string {

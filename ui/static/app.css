@@ -184,6 +184,31 @@ pre.draft { background: var(--bg); border: 1px solid var(--border); border-radiu
 .node .ts { color: var(--muted); font-family: var(--font-mono); font-size: 12px; }
 .chain { color: var(--muted); font-family: var(--font-mono); font-size: 12px; margin-top: var(--s-1); }
 
+/* ---- hunt (ARQL) ------------------------------------------------------- */
+.hunt-bar { margin-bottom: var(--s-6); }
+.qbar {
+  width: 100%; resize: vertical; min-height: 52px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text);
+  border-radius: var(--r-2); padding: var(--s-3) var(--s-4); outline: none;
+  font-family: var(--font-mono); font-size: 13px; line-height: 1.6;
+}
+.qbar:focus { border-color: var(--accent); }
+.hunt-ref { margin-top: var(--s-2); }
+.hunt-ref summary { color: var(--muted); font-size: 12px; cursor: pointer; padding: var(--s-1) 0; }
+.chips { display: flex; flex-wrap: wrap; gap: var(--s-1); margin-top: var(--s-2); }
+.chip {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--muted);
+  border-radius: 999px; padding: 2px 10px; font-family: var(--font-mono); font-size: 11px; cursor: pointer;
+}
+.chip:hover { border-color: var(--accent); color: var(--text); }
+.chip.klass { color: var(--accent); border-color: var(--accent-weak); }
+.chain-group { margin-bottom: var(--s-4); }
+
+/* rule-from-hunt form (in the drawer) */
+.rule-form { display: flex; flex-direction: column; gap: var(--s-3); margin: var(--s-4) 0; }
+.form-row { display: flex; flex-direction: column; gap: var(--s-1); }
+.form-row span { color: var(--muted); font-size: 12px; }
+
 /* ---- command palette --------------------------------------------------- */
 .cmdk { position: fixed; inset: 0; display: none; align-items: flex-start; justify-content: center; padding-top: 12vh; background: rgba(0,0,0,0.5); z-index: 30; }
 .cmdk.show { display: flex; }

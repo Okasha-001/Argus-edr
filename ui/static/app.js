@@ -2,8 +2,8 @@
 
 // The ARGUS console: dependency-free, no build step, no external CDN. It reads
 // the admin HTTP API on the same origin and subscribes to the alert stream over
-// Server-Sent Events. Screens whose backends do not exist yet (Hunt, Automation,
-// AI analyst) arrive with their phases; everything here is backed by real data.
+// Server-Sent Events. Screens whose backends do not exist yet (Automation, AI
+// analyst) arrive with their phases; everything here is backed by real data.
 
 // ---- tiny DOM helpers ----------------------------------------------------
 const $ = (sel) => document.querySelector(sel);
@@ -46,6 +46,7 @@ function toast(msg) {
 const routes = {
   overview: { title: "Overview", render: renderOverview },
   alerts: { title: "Alerts", render: renderAlerts },
+  hunt: { title: "Hunt", render: renderHunt },
   investigation: { title: "Investigation", render: renderInvestigation },
   detections: { title: "Detections", render: renderDetections },
   fleet: { title: "Fleet", render: renderFleet },
@@ -195,6 +196,135 @@ async function renderTriageInto(sel, id) {
   panel.replaceChildren(...kids);
 }
 
+// ---- hunt (ARQL) ---------------------------------------------------------
+async function postJSON(url, body) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `${url}: ${res.status}`);
+  return data;
+}
+
+let huntFieldsLoaded = false;
+async function renderHunt() {
+  if (huntFieldsLoaded) return;
+  let schema;
+  try { schema = await getJSON("/api/hunt/fields"); } catch (_) { return; }
+  huntFieldsLoaded = true;
+  const chip = (text, kind) => {
+    const c = el("button", { class: "chip " + kind, text, type: "button" });
+    c.addEventListener("click", () => insertAtCursor($("#q-input"), text + " "));
+    return c;
+  };
+  $("#q-fields").replaceChildren(
+    ...(schema.classes || []).map((c) => chip(c, "klass")),
+    ...(schema.fields || []).map((f) => chip(f, "field")),
+  );
+}
+function insertAtCursor(area, text) {
+  const start = area.selectionStart ?? area.value.length;
+  area.value = area.value.slice(0, start) + text + area.value.slice(area.selectionEnd ?? start);
+  area.focus();
+  area.selectionStart = area.selectionEnd = start + text.length;
+}
+
+const huntCols = [
+  ["time", (r) => fmtTime(r.time)],
+  ["action", (r) => r.action || "—"],
+  ["host", (r) => r.host || "—"],
+  ["pid", (r) => r.pid || "—"],
+  ["process", (r) => r.process || "—"],
+  ["parent", (r) => r.parent || "—"],
+  ["destination", (r) => r.destination || r.domain || "—"],
+  ["file", (r) => r.file || "—"],
+];
+function huntRowEl(r) {
+  const row = el("tr", { class: "clickable" }, ...huntCols.map(([, get]) =>
+    el("td", { class: "mono", text: String(get(r)) })));
+  row.addEventListener("click", () => openHuntDrawer(r));
+  return row;
+}
+function huntTable(rows) {
+  return el("div", { class: "table-wrap" }, el("table", {},
+    el("thead", {}, el("tr", {}, ...huntCols.map(([h]) => el("th", { text: h })))),
+    el("tbody", {}, ...rows.map(huntRowEl))));
+}
+async function runHunt() {
+  const query = $("#q-input").value.trim();
+  if (!query) return;
+  const out = $("#hunt-results");
+  out.replaceChildren(el("div", { class: "muted", text: "Running hunt…" }));
+  let res;
+  try { res = await postJSON("/api/hunt", { query }); }
+  catch (e) { out.replaceChildren(el("div", { class: "empty", text: String(e.message || e) })); return; }
+  $("#q-meta").textContent = `${res.count} hit(s) · ${res.elapsed_ms} ms`;
+  if (res.sequences) {
+    if (!res.sequences.length) { out.replaceChildren(el("div", { class: "empty", text: "No matching chains." })); return; }
+    out.replaceChildren(...res.sequences.map((chain, i) =>
+      el("div", { class: "chain-group" }, el("h2", { class: "section-title", text: `Chain ${i + 1}` }), huntTable(chain))));
+    return;
+  }
+  const events = res.events || [];
+  if (!events.length) { out.replaceChildren(el("div", { class: "empty", text: "No matching events." })); return; }
+  out.replaceChildren(huntTable(events));
+}
+function openHuntDrawer(r) {
+  const dl = el("dl", { class: "kv" });
+  for (const [k, v] of Object.entries(r)) {
+    if (v === undefined || v === null || v === "" || v === 0) continue;
+    dl.append(el("dt", { text: k }), el("dd", { class: "mono", text: String(v) }));
+  }
+  $("#drawer").replaceChildren(
+    el("button", { class: "icon-btn close", "aria-label": "Close" }, document.createTextNode("✕")),
+    el("h3", { text: "Event" }), dl);
+  $("#drawer .close").addEventListener("click", closeDrawer);
+  $("#drawer").classList.add("show");
+  $("#overlay").classList.add("show");
+}
+
+// saveAsRule opens a small form in the drawer; on submit it asks the server to
+// convert the current query into rule YAML (Phase 14 → 16) and shows it to copy.
+function saveAsRule() {
+  const query = $("#q-input").value.trim();
+  if (!query) { toast("Write a query first."); return; }
+  const field = (id, label, placeholder) => el("label", { class: "form-row" },
+    el("span", { text: label }), el("input", { id, type: "text", placeholder: placeholder || "" }));
+  const form = el("div", { class: "rule-form" },
+    field("rf-id", "Rule ID", "R-0500"),
+    field("rf-name", "Name", "Suspicious shell from web service"),
+    field("rf-sev", "Severity", "high"),
+    field("rf-tech", "Technique ID", "T1059"),
+    field("rf-risk", "Risk score", "70"),
+  );
+  const gen = el("button", { class: "btn", text: "Generate rule" });
+  const output = el("pre", { class: "draft", style: "display:none" });
+  gen.addEventListener("click", async () => {
+    try {
+      const data = await postJSON("/api/hunt/to-rule", {
+        query,
+        id: $("#rf-id").value.trim(), name: $("#rf-name").value.trim(),
+        severity: $("#rf-sev").value.trim() || "medium",
+        risk_score: parseInt($("#rf-risk").value, 10) || 0,
+        technique: { id: $("#rf-tech").value.trim() },
+      });
+      output.textContent = data.yaml;
+      output.style.display = "block";
+      toast("Rule generated · copy it into rules/ and reload");
+    } catch (e) { toast(String(e.message || e)); }
+  });
+  $("#drawer").replaceChildren(
+    el("button", { class: "icon-btn close", "aria-label": "Close" }, document.createTextNode("✕")),
+    el("h3", { text: "Save hunt as rule" }),
+    el("p", { class: "muted summary", text: query }),
+    form, gen, output);
+  $("#drawer .close").addEventListener("click", closeDrawer);
+  $("#drawer").classList.add("show");
+  $("#overlay").classList.add("show");
+}
+
 // ---- investigation -------------------------------------------------------
 async function renderInvestigation() {
   const host = $("#i-host").value.trim();
@@ -282,6 +412,7 @@ async function renderFleet() {
 const commands = [
   { label: "Go to Overview", ic: "▦", run: () => navigate("overview") },
   { label: "Go to Alerts", ic: "⚑", run: () => navigate("alerts") },
+  { label: "Go to Hunt", ic: "⌕", run: () => navigate("hunt") },
   { label: "Go to Investigation", ic: "⌖", run: () => navigate("investigation") },
   { label: "Go to Detections", ic: "❡", run: () => navigate("detections") },
   { label: "Go to Fleet", ic: "▤", run: () => navigate("fleet") },
@@ -362,6 +493,11 @@ function onKeydown(e) {
 function wire() {
   document.querySelectorAll(".nav a").forEach((a) => a.addEventListener("click", () => navigate(a.dataset.route)));
   $("#f-apply").addEventListener("click", renderAlerts);
+  $("#q-run").addEventListener("click", runHunt);
+  $("#q-rule").addEventListener("click", saveAsRule);
+  $("#q-input").addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); runHunt(); }
+  });
   $("#i-load").addEventListener("click", renderInvestigation);
   $("#r-filter").addEventListener("input", drawRules);
   $("#cmdk-open").addEventListener("click", openCmdk);

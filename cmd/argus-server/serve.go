@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
+	"github.com/argus-edr/argus/internal/eventstore"
 	"github.com/argus-edr/argus/internal/fleet"
 	"github.com/argus-edr/argus/internal/fleet/fleetpb"
 	"github.com/argus-edr/argus/internal/triage"
@@ -55,6 +56,8 @@ func runServe(args []string) error {
 	triageModel := flags.String("triage-model", "", "Claude model id for --triage claude (default: latest Opus)")
 	storeKind := flags.String("store", store.BackendMemory, "state backend: memory (ephemeral) or sqlite (durable)")
 	dsn := flags.String("dsn", "", "data source for --store sqlite (database file path)")
+	eventStoreKind := flags.String("event-store", eventstore.BackendMemory, "event lake for threat hunting: memory (ephemeral) or sqlite (point --event-dsn at the lake agents write to)")
+	eventDSN := flags.String("event-dsn", "", "data source for --event-store sqlite (event lake file path; share it with the agents' eventstore output)")
 	ttl := flags.Duration("heartbeat-ttl", 90*time.Second, "treat an agent offline after this long without a heartbeat")
 	window := flags.Duration("correlate-window", 5*time.Minute, "cross-host correlation window")
 	minHosts := flags.Int("correlate-min-hosts", 3, "distinct hosts before a cross-host signal fires")
@@ -84,12 +87,19 @@ func runServe(args []string) error {
 	defer backing.Close()
 	logger.Info("state backend", "store", *storeKind)
 
+	lake, err := eventstore.Open(*eventStoreKind, *eventDSN)
+	if err != nil {
+		return fmt.Errorf("open event lake: %w", err)
+	}
+	defer lake.Close()
+	logger.Info("event lake", "store", *eventStoreKind)
+
 	rbac, err := newAuthz(*adminToken, *rbacFile)
 	if err != nil {
 		return err
 	}
 	correlator := correlate.NewCrossHost(*window, *minHosts)
-	admin := newAdminAPI(backing, rules, *ttl, rbac, issuer, logger)
+	admin := newAdminAPI(backing, rules, *ttl, rbac, issuer, lake, logger)
 	if issuer != nil {
 		logger.Info("agent certificate rotation enabled (CA key loaded)")
 	}

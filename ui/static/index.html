@@ -13,6 +13,7 @@
       <nav class="nav" aria-label="Primary">
         <a data-route="overview"><span class="ic">▦</span> Overview</a>
         <a data-route="alerts"><span class="ic">⚑</span> Alerts</a>
+        <a data-route="hunt"><span class="ic">⌕</span> Hunt</a>
         <a data-route="investigation"><span class="ic">⌖</span> Investigation</a>
         <a data-route="detections"><span class="ic">❡</span> Detections</a>
         <a data-route="fleet"><span class="ic">▤</span> Fleet</a>
@@ -72,6 +73,23 @@
             <th>Time</th><th>Sev</th><th>Rule</th><th>Technique</th>
             <th>Host</th><th>PID</th><th>Process</th><th>Dest</th><th>Risk</th>
           </tr></thead><tbody id="alerts-body"></tbody></table></div>
+        </section>
+
+        <section id="hunt" class="screen" aria-label="Hunt">
+          <div class="hunt-bar">
+            <textarea id="q-input" class="qbar mono" rows="2" spellcheck="false"
+              placeholder='exec where process.name in ("bash","sh") and process.parent.name == "nginx"'
+              aria-label="ARQL query"></textarea>
+            <div class="toolbar">
+              <button class="btn" id="q-run">Run hunt</button>
+              <button class="btn ghost" id="q-rule">Save as rule</button>
+              <span class="muted" id="q-meta">Search the event lake with ARQL · ⌘/Ctrl+Enter to run</span>
+            </div>
+            <details class="hunt-ref"><summary>Field &amp; class reference</summary>
+              <div id="q-fields" class="chips"></div>
+            </details>
+          </div>
+          <div id="hunt-results"><div class="empty">Write a query and run it. Try <code>connect where destination.port == 4444</code>.</div></div>
         </section>
 
         <section id="investigation" class="screen" aria-label="Investigation">

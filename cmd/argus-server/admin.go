@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/argus-edr/argus/internal/eventstore"
 	"github.com/argus-edr/argus/internal/fleet"
 	"github.com/argus-edr/argus/internal/fleet/fleetpb"
 	"github.com/argus-edr/argus/internal/triage"
@@ -49,6 +50,12 @@ type adminAPI struct {
 	// serve.go upgrades it to the Claude provider when explicitly enabled.
 	summarizer triage.Summarizer
 
+	// lake is the queryable event history the threat-hunting engine searches. It
+	// is nil unless the operator configured an event store (--event-store), in
+	// which case the hunt endpoints report that hunting is unavailable rather than
+	// pretending an empty result.
+	lake eventstore.Store
+
 	stream  *broadcaster
 	metrics *serverMetrics
 	audit   *auditLog
@@ -57,9 +64,9 @@ type adminAPI struct {
 	signals []correlate.Signal
 }
 
-func newAdminAPI(backing store.Store, rules *ruleset.Provider, ttl time.Duration, rbac *authz, issuer *fleet.CertIssuer, logger *slog.Logger) *adminAPI {
+func newAdminAPI(backing store.Store, rules *ruleset.Provider, ttl time.Duration, rbac *authz, issuer *fleet.CertIssuer, lake eventstore.Store, logger *slog.Logger) *adminAPI {
 	return &adminAPI{
-		store: backing, rules: rules, ttl: ttl, authz: rbac, issuer: issuer, logger: logger,
+		store: backing, rules: rules, ttl: ttl, authz: rbac, issuer: issuer, lake: lake, logger: logger,
 		summarizer: triage.New(triage.Config{}, logger), // template by default; serve.go may upgrade
 		stream:     newBroadcaster(), metrics: newServerMetrics(backing),
 		audit: newAuditLog(nil, nil, logger), // serve.go upgrades this to a signed, file-backed log
@@ -89,6 +96,11 @@ func (a *adminAPI) mux() http.Handler {
 	mux.HandleFunc("GET /api/signals", a.handleSignals)
 	mux.HandleFunc("GET /api/rules", a.handleRules)
 	mux.HandleFunc("GET /api/stream", a.handleStream)
+	// Threat hunting is read-only analysis over the event lake: it queries history,
+	// it never changes fleet state, so it stays open like the other read endpoints.
+	mux.HandleFunc("GET /api/hunt/fields", a.handleHuntFields)
+	mux.HandleFunc("POST /api/hunt", a.handleHunt)
+	mux.HandleFunc("POST /api/hunt/to-rule", a.handleHuntToRule)
 	mux.Handle("GET /metrics", a.metrics.registry.Handler())
 	// State-changing endpoints are authorized by role: enqueuing a command (which
 	// reaches an agent as kill/quarantine/posture) needs an operator; reloading the
