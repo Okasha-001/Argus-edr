@@ -6,7 +6,7 @@ var (
 	validLogLevels = map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
 	validSources   = map[string]bool{SourceEBPF: true, SourceReplay: true}
 	validModes     = map[string]bool{ModeOff: true, ModeDryRun: true, ModeEnforce: true}
-	validOutputs   = map[string]bool{"stdout": true, "file": true, "loki": true, "sqlite": true}
+	validOutputs   = map[string]bool{"stdout": true, "file": true, "loki": true, "sqlite": true, "eventstore": true}
 
 	// modeRank orders the response postures so config can enforce mode <= max_mode.
 	modeRank = map[string]int{ModeOff: 0, ModeDryRun: 1, ModeEnforce: 2}
@@ -101,7 +101,7 @@ func (c Config) validateFleet() error {
 func (c Config) validateOutputs() error {
 	for i, out := range c.Outputs {
 		if !validOutputs[out.Type] {
-			return fmt.Errorf("outputs[%d].type %q invalid (want stdout|file|loki|sqlite)", i, out.Type)
+			return fmt.Errorf("outputs[%d].type %q invalid (want stdout|file|loki|sqlite|eventstore)", i, out.Type)
 		}
 		if out.Type == "file" && out.Path == "" {
 			return fmt.Errorf("outputs[%d] (file) requires a path", i)
@@ -112,8 +112,31 @@ func (c Config) validateOutputs() error {
 		if out.Type == "loki" && out.Endpoint == "" {
 			return fmt.Errorf("outputs[%d] (loki) requires an endpoint", i)
 		}
+		if err := validateEventStoreOutput(i, out); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// validateEventStoreOutput checks an eventstore sink. It reuses Output.Format as
+// the backend selector ("memory" or "sqlite"); an empty format defaults to the
+// infrastructure-free in-memory lake, and sqlite requires a database path.
+func validateEventStoreOutput(index int, out Output) error {
+	if out.Type != "eventstore" {
+		return nil
+	}
+	switch out.Format {
+	case "", "memory":
+		return nil
+	case "sqlite":
+		if out.Path == "" {
+			return fmt.Errorf("outputs[%d] (eventstore) requires a path when format=sqlite", index)
+		}
+		return nil
+	default:
+		return fmt.Errorf("outputs[%d] (eventstore) format %q invalid (want memory|sqlite)", index, out.Format)
+	}
 }
 
 // maxCommLen is TASK_COMM_LEN-1: the kernel stores a process comm in a 16-byte
