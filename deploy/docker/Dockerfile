@@ -13,9 +13,14 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o /out/argus ./cmd/argus
+# The control plane ships in the same image so one tag serves both the agent
+# DaemonSet and the server Deployment (see deploy/helm). It is a separate static
+# binary; the agent entrypoint below is unchanged.
+RUN CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o /out/argus-server ./cmd/argus-server
 
 FROM gcr.io/distroless/static-debian12
 COPY --from=build /out/argus /usr/local/bin/argus
+COPY --from=build /out/argus-server /usr/local/bin/argus-server
 COPY build/edr.bpf.o /usr/lib/argus/edr.bpf.o
 COPY rules /etc/argus/rules
 COPY configs/argus.yaml /etc/argus/config.yaml

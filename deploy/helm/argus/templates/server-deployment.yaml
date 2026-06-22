@@ -1,0 +1,73 @@
+{{- if .Values.server.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "argus.fullname" . }}-server
+  labels:
+    {{- include "argus.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  replicas: {{ .Values.server.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "argus.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        {{- include "argus.labels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+    spec:
+      serviceAccountName: {{ include "argus.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: server
+          image: {{ include "argus.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/argus-server", "serve"]
+          args:
+            - "--grpc"
+            - ":{{ .Values.server.grpcPort }}"
+            - "--http"
+            - "0.0.0.0:{{ .Values.server.adminPort }}"
+            - "--ui-addr"
+            - "0.0.0.0:{{ .Values.server.uiPort }}"
+            - "--rules"
+            - "/etc/argus/rules"
+            {{- if .Values.server.tlsSecret }}
+            - "--ca"
+            - "/etc/argus/fleet/ca.pem"
+            - "--cert"
+            - "/etc/argus/fleet/server.pem"
+            - "--key"
+            - "/etc/argus/fleet/server-key.pem"
+            {{- else }}
+            # No tlsSecret set: ephemeral dev certs. Set server.tlsSecret in prod.
+            - "--dev"
+            {{- end }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.server.grpcPort }}
+            - name: admin
+              containerPort: {{ .Values.server.adminPort }}
+            - name: ui
+              containerPort: {{ .Values.server.uiPort }}
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+          {{- if .Values.server.tlsSecret }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/argus/fleet
+              readOnly: true
+          {{- end }}
+      {{- if .Values.server.tlsSecret }}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ .Values.server.tlsSecret }}
+      {{- end }}
+{{- end }}

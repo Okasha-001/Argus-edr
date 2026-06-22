@@ -1,0 +1,82 @@
+name: release
+
+# Build, package, sign, and publish artifacts when a version tag is pushed.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the GitHub release and upload assets
+  id-token: write # keyless cosign signing via the GitHub OIDC token
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags drive the version stamped via `git describe`
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+
+      - name: Install eBPF + packaging toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm
+          sudo apt-get install -y "linux-tools-$(uname -r)" || sudo apt-get install -y linux-tools-generic || true
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Build eBPF objects and binaries
+        run: |
+          ./scripts/gen-vmlinux.sh
+          make all
+
+      - name: Package deb + rpm
+        run: make package
+
+      - name: Generate SBOM (syft, CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: build/dist/argus.sbom.cdx.json
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign artifacts (keyless) + provenance
+        run: |
+          cd build/dist
+          for artifact in *.deb *.rpm argus.sbom.cdx.json; do
+            cosign sign-blob --yes \
+              --output-signature "${artifact}.sig" \
+              --output-certificate "${artifact}.pem" \
+              "${artifact}"
+          done
+          sha256sum * > SHA256SUMS
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/dist/*.deb
+            build/dist/*.rpm
+            build/dist/argus.sbom.cdx.json
+            build/dist/*.sig
+            build/dist/*.pem
+            build/dist/SHA256SUMS
+          body: |
+            ARGUS ${{ github.ref_name }}
+
+            Artifacts are signed with cosign (keyless, GitHub OIDC). Verify, e.g.:
+
+            ```
+            cosign verify-blob --signature argus_*.deb.sig --certificate argus_*.deb.pem \
+              --certificate-identity-regexp 'https://github.com/argus-edr/argus/.+' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              argus_*.deb
+            ```

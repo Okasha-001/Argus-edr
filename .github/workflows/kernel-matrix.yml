@@ -1,0 +1,57 @@
+name: kernel-matrix
+
+# Compile the eBPF objects once, then load them under a range of kernel versions
+# to prove the verifier accepts them across the support window. A program that
+# uses a helper or loop shape an older kernel rejects fails here, before release.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install eBPF toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm
+          sudo apt-get install -y "linux-tools-$(uname -r)" || sudo apt-get install -y linux-tools-generic || true
+      - run: ./scripts/gen-vmlinux.sh
+      - run: make bpf
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bpf-objects
+          path: build/*.bpf.o
+
+  verifier:
+    needs: compile
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # The support window: oldest BTF/ring-buffer kernel through current LTS.
+        kernel: ["5.8", "5.15", "6.1", "6.8"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bpf-objects
+          path: build
+      - name: Load the objects on kernel ${{ matrix.kernel }}
+        # little-vm-helper boots a VM at the requested kernel and runs the command
+        # against the mounted workspace. Pin to a digest in production (see
+        # docs/PACKAGING.md); the tag is used here for readability.
+        uses: cilium/little-vm-helper@v0.0.23
+        with:
+          test-name: argus-verifier
+          image-version: ${{ matrix.kernel }}
+          host-mount: ./
+          install-dependencies: "true"
+          cmd: |
+            cd /host
+            ./scripts/verifier-smoke.sh

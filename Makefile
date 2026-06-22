@@ -21,6 +21,10 @@ BPF_OBJS  := $(patsubst $(BPF_DIR)/%.bpf.c,$(BUILD_DIR)/%.bpf.o,$(BPF_SRCS))
 BPF_HEADERS := $(filter-out $(VMLINUX),$(wildcard $(BPF_DIR)/*.h $(BPF_DIR)/headers/*.h))
 
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+# Package metadata: strip a leading v for semver (v1.2.3 -> 1.2.3) and use the
+# Go arch name (amd64/arm64) the deb/rpm tooling expects.
+PKG_VERSION := $(patsubst v%,%,$(VERSION))
+NFPM_ARCH   := $(shell $(GO) env GOARCH)
 PKG      := github.com/argus-edr/argus/internal/version
 LDFLAGS  := -s -w -X $(PKG).Version=$(VERSION) -X $(PKG).BuildDate=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
@@ -139,6 +143,29 @@ install: all
 	install -Dm0644 $(BUILD_DIR)/edr.bpf.o /usr/lib/argus/edr.bpf.o
 	install -Dm0644 configs/argus.yaml /etc/argus/config.yaml
 	cp -r rules /etc/argus/
+
+## package: build signed-ready deb + rpm with nfpm (needs `make all` artifacts + nfpm)
+DIST_DIR := $(BUILD_DIR)/dist
+.PHONY: package
+package: all
+	@command -v nfpm >/dev/null 2>&1 || { echo "nfpm not found — https://nfpm.goreleaser.com/install/"; exit 1; }
+	@mkdir -p $(DIST_DIR)
+	VERSION=$(PKG_VERSION) NFPM_ARCH=$(NFPM_ARCH) nfpm package -f packaging/nfpm.yaml -p deb -t $(DIST_DIR)
+	VERSION=$(PKG_VERSION) NFPM_ARCH=$(NFPM_ARCH) nfpm package -f packaging/nfpm.yaml -p rpm -t $(DIST_DIR)
+	@ls -1 $(DIST_DIR)
+
+## sbom: generate a CycloneDX SBOM of the source + dependencies with syft
+.PHONY: sbom
+sbom:
+	@command -v syft >/dev/null 2>&1 || { echo "syft not found — https://github.com/anchore/syft"; exit 1; }
+	@mkdir -p $(DIST_DIR)
+	syft dir:. -o cyclonedx-json=$(DIST_DIR)/argus.sbom.cdx.json
+	@echo "wrote $(DIST_DIR)/argus.sbom.cdx.json"
+
+## verifier-smoke: load the compiled eBPF objects and confirm the verifier accepts them (needs root + a BTF kernel)
+.PHONY: verifier-smoke
+verifier-smoke: bpf
+	./scripts/verifier-smoke.sh
 
 ## clean: remove build artifacts
 .PHONY: clean

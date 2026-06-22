@@ -1,0 +1,18 @@
+apiVersion: v2
+name: argus
+description: eBPF endpoint detection & response for Linux — a per-node agent DaemonSet and an optional control plane.
+type: application
+# Chart version is independent of the app; appVersion tracks the ARGUS release.
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/argus-edr/argus
+sources:
+  - https://github.com/argus-edr/argus
+keywords:
+  - ebpf
+  - edr
+  - security
+  - mitre-attack
+maintainers:
+  - name: ARGUS
+    url: https://github.com/argus-edr/argus

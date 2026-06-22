@@ -1,0 +1,25 @@
+{{- if .Values.server.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "argus.fullname" . }}-server
+  labels:
+    {{- include "argus.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  type: {{ .Values.server.service.type }}
+  selector:
+    app.kubernetes.io/name: {{ include "argus.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: server
+  ports:
+    - name: grpc
+      port: {{ .Values.server.grpcPort }}
+      targetPort: grpc
+    - name: admin
+      port: {{ .Values.server.adminPort }}
+      targetPort: admin
+    - name: ui
+      port: {{ .Values.server.uiPort }}
+      targetPort: ui
+{{- end }}

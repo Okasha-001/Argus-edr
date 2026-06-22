@@ -1,0 +1,54 @@
+# Default values for the ARGUS chart. Safe by default: the agent observes and
+# alerts; it never enforces until response.mode is changed (see docs/SAFETY.md).
+
+image:
+  repository: ghcr.io/argus-edr/argus
+  tag: "" # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# The per-node agent (a privileged DaemonSet — eBPF loading needs host kernel
+# access and the BPF capabilities).
+agent:
+  enabled: true
+  # off | dry-run | enforce. Keep off until you have validated detections on a
+  # snapshotted node; enforce can lock you out of a host.
+  responseMode: "off"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+  tolerations:
+    # Run on every node, including control-plane nodes.
+    - operator: Exists
+  nodeSelector: {}
+  # Extra keys merged into the agent config (configs/argus.yaml schema).
+  extraConfig: {}
+
+# The control plane (gRPC/mTLS + admin API + web console). Off by default; a
+# single-replica Deployment when enabled. Provide certs via an existing secret.
+server:
+  enabled: false
+  replicas: 1
+  grpcPort: 8443
+  adminPort: 8080
+  uiPort: 9090
+  # Name of a Secret holding ca.pem, server.pem, server-key.pem for mTLS.
+  tlsSecret: ""
+  service:
+    type: ClusterIP
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+serviceAccount:
+  create: true
+  name: ""

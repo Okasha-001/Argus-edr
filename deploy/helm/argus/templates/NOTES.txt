@@ -1,0 +1,29 @@
+ARGUS {{ .Chart.AppVersion }} installed as release {{ .Release.Name }}.
+
+{{- if .Values.agent.enabled }}
+
+Agent (DaemonSet) is running on every node in response mode: {{ .Values.agent.responseMode | quote }}.
+{{- if eq .Values.agent.responseMode "enforce" }}
+
+  ⚠️  ENFORCE is active fleet-wide. BPF-LSM can deny syscalls and the agent can
+      kill processes. Make sure you validated detections first — see the SAFETY
+      doc shipped at /usr/share/doc/argus/SAFETY.md.
+{{- else }}
+
+  The agent observes and alerts only; it will not enforce until you set
+  agent.responseMode=dry-run (then enforce). See docs/SAFETY.md first.
+{{- end }}
+{{- end }}
+
+{{- if .Values.server.enabled }}
+
+Control plane reachable in-cluster at:
+  {{ include "argus.fullname" . }}-server:{{ .Values.server.adminPort }}  (admin API + web console on :{{ .Values.server.uiPort }})
+{{- if not .Values.server.tlsSecret }}
+
+  ⚠️  Running with ephemeral --dev certificates. Set server.tlsSecret to a Secret
+      holding ca.pem / server.pem / server-key.pem for a real deployment.
+{{- end }}
+{{- end }}
+
+Check status:  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}

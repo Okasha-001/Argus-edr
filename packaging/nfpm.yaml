@@ -1,0 +1,55 @@
+# nfpm config for the ARGUS deb/rpm packages. Built by `make package` (which
+# exports VERSION and NFPM_ARCH) and by the release workflow. nfpm expands the
+# ${...} variables from the environment.
+#
+# Install layout mirrors the systemd unit and the Makefile `install` target:
+#   /usr/bin/argus, /usr/bin/argus-server   binaries
+#   /usr/lib/argus/*.bpf.o                  compiled eBPF objects (loaded at runtime)
+#   /etc/argus/config.yaml, /etc/argus/rules  config + detection rules
+#   /lib/systemd/system/argus.service       the agent unit (disabled until armed)
+name: argus
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${VERSION}
+version_schema: semver
+section: admin
+priority: optional
+maintainer: ARGUS <argus-edr@users.noreply.github.com>
+description: |
+  eBPF-based endpoint detection & response for Linux. Kernel sensors stream
+  events to a userspace Go agent that maps behaviour to MITRE ATT&CK and can
+  enforce via BPF-LSM. Enforcement ships OFF by default.
+vendor: ARGUS
+homepage: https://github.com/argus-edr/argus
+license: Apache-2.0
+
+contents:
+  - src: ./build/bin/argus
+    dst: /usr/bin/argus
+  - src: ./build/bin/argus-server
+    dst: /usr/bin/argus-server
+  - src: ./build/edr.bpf.o
+    dst: /usr/lib/argus/edr.bpf.o
+  - src: ./build/edr_lsm.bpf.o
+    dst: /usr/lib/argus/edr_lsm.bpf.o
+  - src: ./rules
+    dst: /etc/argus/rules
+  - src: ./configs/argus.yaml
+    dst: /etc/argus/config.yaml
+    type: "config|noreplace"
+  - src: ./packaging/argus.service
+    dst: /lib/systemd/system/argus.service
+  - src: ./docs/SAFETY.md
+    dst: /usr/share/doc/argus/SAFETY.md
+
+scripts:
+  postinstall: ./packaging/scripts/postinstall.sh
+  preremove: ./packaging/scripts/preremove.sh
+
+overrides:
+  rpm:
+    depends:
+      - bpftool
+  deb:
+    depends:
+      - linux-tools-common

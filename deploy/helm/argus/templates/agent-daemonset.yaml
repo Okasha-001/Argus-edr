@@ -1,0 +1,77 @@
+{{- if .Values.agent.enabled -}}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "argus.fullname" . }}-agent
+  labels:
+    {{- include "argus.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "argus.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: agent
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        {{- include "argus.labels" . | nindent 8 }}
+        app.kubernetes.io/component: agent
+      annotations:
+        # Roll the DaemonSet when the rendered config changes.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "argus.serviceAccountName" . }}
+      # eBPF sensors read host kernel state and processes; the agent shares the
+      # host PID namespace so it sees and (under enforce) can act on real PIDs.
+      hostPID: true
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agent.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agent.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: agent
+          image: {{ include "argus.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["run", "--config", "/etc/argus/config.yaml"]
+          securityContext:
+            # Loading eBPF (and BPF-LSM enforcement) needs broad kernel access.
+            # Tighten to CAP_BPF/CAP_SYS_ADMIN/CAP_PERFMON once your nodes' kernels
+            # support unprivileged BPF for every program ARGUS loads.
+            privileged: true
+          resources:
+            {{- toYaml .Values.agent.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/argus/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: btf
+              mountPath: /sys/kernel/btf
+              readOnly: true
+            - name: bpffs
+              mountPath: /sys/fs/bpf
+              mountPropagation: Bidirectional
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "argus.fullname" . }}-agent
+        - name: btf
+          hostPath:
+            path: /sys/kernel/btf
+            type: File
+        - name: bpffs
+          hostPath:
+            path: /sys/fs/bpf
+            type: DirectoryOrCreate
+{{- end }}

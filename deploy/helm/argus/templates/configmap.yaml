@@ -1,0 +1,21 @@
+{{- if .Values.agent.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "argus.fullname" . }}-agent
+  labels:
+    {{- include "argus.labels" . | nindent 4 }}
+data:
+  # The agent validates this on startup and rejects unknown keys, so it only needs
+  # the values you override — everything else falls back to the built-in defaults
+  # (bpf object, rules dir, outputs). Enforcement stays off until responseMode says
+  # otherwise. Add more keys via .Values.agent.extraConfig.
+  config.yaml: |
+    agent:
+      log_format: json
+    response:
+      mode: {{ .Values.agent.responseMode | quote }}
+    {{- with .Values.agent.extraConfig }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
