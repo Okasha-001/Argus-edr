@@ -1,12 +1,8 @@
 package respond
 
 import (
-	"fmt"
 	"log/slog"
-	"os"
-	"strings"
 	"sync/atomic"
-	"syscall"
 
 	"github.com/argus-edr/argus/internal/model"
 )
@@ -183,23 +179,6 @@ func (r *Responder) allowlisted(event *model.Event) bool {
 	return r.allowlist[event.Process.Executable]
 }
 
-// signalGuarded re-reads /proc/<pid>/comm and refuses if it no longer matches
-// what the alert observed — a cheap guard against signalling the wrong process
-// after PID reuse — then delivers sig.
-func signalGuarded(pid uint32, comm string, sig syscall.Signal) error {
-	if comm != "" {
-		actual, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid))
-		if err != nil {
-			return fmt.Errorf("process %d gone: %w", pid, err)
-		}
-		if current := strings.TrimSpace(string(actual)); current != comm {
-			return fmt.Errorf("pid %d is now %q, not %q: refusing to signal", pid, current, comm)
-		}
-	}
-	return syscall.Kill(int(pid), sig)
-}
-
-// guardedKill terminates a process; guardedFreeze suspends it with a reversible
-// SIGSTOP (an analyst resumes it with SIGCONT). Both apply the PID-reuse guard.
-func guardedKill(pid uint32, comm string) error   { return signalGuarded(pid, comm, syscall.SIGKILL) }
-func guardedFreeze(pid uint32, comm string) error { return signalGuarded(pid, comm, syscall.SIGSTOP) }
+// guardedKill terminates a process and guardedFreeze suspends it reversibly. Both
+// apply a PID-reuse guard before signalling. Their implementation is OS-specific
+// (POSIX signals on Linux), so they live in signal_linux.go / signal_other.go.

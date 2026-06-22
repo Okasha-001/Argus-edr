@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"sync"
-	"syscall"
 )
 
 // Hasher computes SHA-256 digests of executables for IOC matching. Results are
@@ -73,9 +72,7 @@ func hashFile(path string) string {
 }
 
 func cacheKey(path string, info os.FileInfo) string {
-	var inode uint64
-	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-		inode = stat.Ino
-	}
-	return fmt.Sprintf("%s|%d|%d|%d", path, inode, info.ModTime().UnixNano(), info.Size())
+	// The inode strengthens the key so a rebuilt binary at the same path is
+	// re-hashed; it is OS-specific (fileInode lives in hash_linux.go / hash_other.go).
+	return fmt.Sprintf("%s|%d|%d|%d", path, fileInode(info), info.ModTime().UnixNano(), info.Size())
 }

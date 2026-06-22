@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/argus-edr/argus/internal/anomaly"
-	"github.com/argus-edr/argus/internal/bpfloader"
 	"github.com/argus-edr/argus/internal/config"
 	"github.com/argus-edr/argus/internal/detect"
 	"github.com/argus-edr/argus/internal/enrich"
@@ -171,27 +170,16 @@ func buildIntel(cfg config.Config, logger *slog.Logger) (*intel.Matcher, error) 
 	return matcher, nil
 }
 
+// buildSource picks the event source: the recorded replay (any platform) or the
+// platform's live source. The live source is the one piece that differs per OS —
+// eBPF on Linux, a process source on Windows — so it lives in a build-tagged
+// newLiveSource. Everything downstream (enrich, detect, respond, output, fleet)
+// is platform-neutral and consumes the same model.Event.
 func buildSource(cfg config.Config, logger *slog.Logger) pipeline.Source {
 	if cfg.Input.Source == config.SourceReplay {
 		return pipeline.NewReplaySource(cfg.Input.ReplayFile)
 	}
-	return bpfloader.NewEBPFSource(bpfloader.Options{
-		ObjectPath:    cfg.Input.BPFObject,
-		LSMObjectPath: enforcementObject(cfg),
-		Hostname:      cfg.Agent.Hostname,
-		EnforceMode:   cfg.Response.ModeValue(),
-		CredReaders:   cfg.Response.CredReaderAllowlist,
-		Logger:        logger,
-	})
-}
-
-// enforcementObject is the LSM object sitting next to the sensor object, loaded
-// only when response enforcement is actually requested.
-func enforcementObject(cfg config.Config) string {
-	if cfg.Response.Mode == config.ModeOff {
-		return ""
-	}
-	return filepath.Join(filepath.Dir(cfg.Input.BPFObject), "edr_lsm.bpf.o")
+	return newLiveSource(cfg, logger)
 }
 
 // selfProtection bundles the userspace tamper checks so the runtime can wire the
