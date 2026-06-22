@@ -120,6 +120,7 @@ Binds to `127.0.0.1:8080` by default (not mutually authenticated — keep local)
 | `GET /api/agents` | Enrolled agents + `online` flag. |
 | `GET /api/alerts?…` | Alert history, newest first. Optional filters: `host`, `severity`, `technique`, `since`/`until` (RFC3339), `incidents=true`, `limit=N`. |
 | `GET /api/alerts/{id}` | One stored alert by id. |
+| `GET /api/alerts/{id}/triage` | Triage report for an incident: summary, severity, containment, optional rule draft (offline template by default; Claude with `--triage claude`). See `docs/TRIAGE.md`. |
 | `GET /api/signals` | Recent cross-host signals. |
 | `GET /api/rules` | Rule catalogue (id/name/severity/technique) + bundle version. |
 | `GET /api/stream` | Live alert feed as Server-Sent Events (`event: alert`). |

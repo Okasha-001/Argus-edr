@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/argus-edr/argus/internal/fleet"
+	"github.com/argus-edr/argus/internal/triage"
 	"github.com/argus-edr/argus/server/ruleset"
 	"github.com/argus-edr/argus/server/store"
 )
@@ -198,5 +199,44 @@ func TestRotateCertRequiresAdmin(t *testing.T) {
 	}
 	if rec := rotateCert(handler, agent.ID, "Bearer boss"); rec.Code != http.StatusOK {
 		t.Errorf("admin rotate-cert = %d, want 200", rec.Code)
+	}
+}
+
+func TestTriageEndpointReturnsTemplateReport(t *testing.T) {
+	api := testAdminAPI(t, "") // default summarizer is the offline template
+	api.store.RecordAlert(store.AlertRecord{
+		ID: "INC-1", Hostname: "web-01", ProcessName: "kdevtmpfsi", PID: 4200,
+		RiskScore: 90, TechniqueID: "T1036", IsIncident: true,
+	})
+	handler := api.mux()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/alerts/INC-1/triage", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("triage = %d, want 200; body %s", rec.Code, rec.Body.String())
+	}
+	var report triage.Report
+	if err := json.Unmarshal(rec.Body.Bytes(), &report); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	if report.Source != triage.ProviderTemplate {
+		t.Errorf("source = %q, want template", report.Source)
+	}
+	if report.Severity != "critical" {
+		t.Errorf("severity = %q, want critical for risk 90", report.Severity)
+	}
+	if !strings.Contains(report.Summary, "web-01") || len(report.Containment) == 0 {
+		t.Errorf("incoherent report: %+v", report)
+	}
+}
+
+func TestTriageEndpointUnknownAlert(t *testing.T) {
+	handler := testAdminAPI(t, "").mux()
+	req := httptest.NewRequest(http.MethodGet, "/api/alerts/nope/triage", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("triage of unknown alert = %d, want 404", rec.Code)
 	}
 }

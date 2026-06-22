@@ -125,4 +125,14 @@ button:hover { border-color: var(--accent); }
 .node .chain { color: var(--accent); }
 .empty { color: var(--muted); padding: 30px 0; }
 
+.node .triage-btn { margin-top: 8px; font-size: 12px; padding: 2px 10px; }
+.triage { margin-top: 8px; }
+.triage:not(:empty) { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; }
+.triage h3 { margin: 0 0 8px; font-size: 14px; }
+.triage .src { color: var(--muted); font-weight: 400; }
+.triage .summary { margin: 0 0 10px; line-height: 1.5; }
+.triage .steps { margin: 0; padding-left: 18px; color: var(--muted); }
+.triage .steps li { margin: 2px 0; }
+.triage .draft { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-top: 10px; overflow-x: auto; font-size: 12px; }
+
 footer { padding: 16px 20px; border-top: 1px solid var(--line); }

@@ -129,20 +129,46 @@ async function loadTimeline() {
   let rows = [];
   try { rows = await getJSON("/api/alerts?limit=500&host=" + encodeURIComponent(host)); } catch (e) { return; }
   if (!rows.length) { tl.replaceChildren(el("div", { class: "empty", text: "No alerts for " + host })); return; }
+  $("#triage").replaceChildren();
   tl.replaceChildren(...rows.map((a) => {
     const proc = a.ProcessExecutable || a.process_executable || a.ProcessName || a.process_name || "process";
     const tech = (a.TechniqueID || a.technique_id) ? `${a.TechniqueID || a.technique_id} ${a.TechniqueName || a.technique_name || ""}` : "";
     const dest = a.DestinationIP || a.destination_ip;
     const chain = [proc, tech && `▶ ${tech}`, dest && `▶ ${dest}`].filter(Boolean).join("  ");
-    return el("div", { class: "node" },
-      el("div", { class: "ts", text: fmtTime(a.Time || a.time) }),
-      el("div", { class: "body" },
-        el("span", { class: sevClass(a.Severity || a.severity), text: (sevText(a.Severity || a.severity) || "") + "  " }),
-        el("strong", { text: (a.RuleID || a.rule_id || "") + "  " }),
-        el("span", { text: a.RuleName || a.rule_name || "" }),
-        el("div", { class: "chain", text: chain }),
-      ));
+    const body = el("div", { class: "body" },
+      el("span", { class: sevClass(a.Severity || a.severity), text: (sevText(a.Severity || a.severity) || "") + "  " }),
+      el("strong", { text: (a.RuleID || a.rule_id || "") + "  " }),
+      el("span", { text: a.RuleName || a.rule_name || "" }),
+      el("div", { class: "chain", text: chain }),
+    );
+    if (a.IsIncident || a.is_incident) {
+      const btn = el("button", { class: "triage-btn", text: "Triage" });
+      btn.addEventListener("click", () => renderTriage(a.ID || a.id));
+      body.append(btn);
+    }
+    return el("div", { class: "node" }, el("div", { class: "ts", text: fmtTime(a.Time || a.time) }), body);
   }));
+}
+
+// renderTriage asks the control plane for an incident's triage report (offline
+// template by default, Claude when the operator enabled it) and renders it below
+// the timeline.
+async function renderTriage(id) {
+  const panel = $("#triage");
+  panel.replaceChildren(el("div", { class: "muted", text: "Running triage…" }));
+  let r;
+  try { r = await getJSON("/api/alerts/" + encodeURIComponent(id) + "/triage"); }
+  catch (e) { panel.replaceChildren(el("div", { class: "empty", text: "Triage unavailable." })); return; }
+  const kids = [
+    el("h3", {},
+      el("span", { text: "Triage  " }),
+      el("span", { class: sevClass(r.severity), text: sevText(r.severity) || "" }),
+      el("span", { class: "src", text: "  · " + (r.source || "") })),
+    el("p", { class: "summary", text: r.summary || "" }),
+    el("ul", { class: "steps" }, ...(r.containment || []).map((s) => el("li", { text: s }))),
+  ];
+  if (r.rule_draft) kids.push(el("pre", { class: "draft", text: r.rule_draft }));
+  panel.replaceChildren(...kids);
 }
 $("#i-load").addEventListener("click", loadTimeline);
 

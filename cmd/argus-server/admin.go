@@ -12,11 +12,16 @@ import (
 
 	"github.com/argus-edr/argus/internal/fleet"
 	"github.com/argus-edr/argus/internal/fleet/fleetpb"
+	"github.com/argus-edr/argus/internal/triage"
 	"github.com/argus-edr/argus/internal/version"
 	"github.com/argus-edr/argus/server/correlate"
 	"github.com/argus-edr/argus/server/ruleset"
 	"github.com/argus-edr/argus/server/store"
 )
+
+// triageHostAlerts bounds how many of a host's recent alerts feed an incident's
+// triage context, so a noisy host cannot blow up the prompt or the template.
+const triageHostAlerts = 50
 
 const (
 	maxRetainedSignals = 200
@@ -40,6 +45,10 @@ type adminAPI struct {
 	// endpoint is disabled rather than minting from a CA it does not hold.
 	issuer *fleet.CertIssuer
 
+	// summarizer produces incident triage. It defaults to the offline template;
+	// serve.go upgrades it to the Claude provider when explicitly enabled.
+	summarizer triage.Summarizer
+
 	stream  *broadcaster
 	metrics *serverMetrics
 	audit   *auditLog
@@ -51,7 +60,8 @@ type adminAPI struct {
 func newAdminAPI(backing store.Store, rules *ruleset.Provider, ttl time.Duration, rbac *authz, issuer *fleet.CertIssuer, logger *slog.Logger) *adminAPI {
 	return &adminAPI{
 		store: backing, rules: rules, ttl: ttl, authz: rbac, issuer: issuer, logger: logger,
-		stream: newBroadcaster(), metrics: newServerMetrics(backing),
+		summarizer: triage.New(triage.Config{}, logger), // template by default; serve.go may upgrade
+		stream:     newBroadcaster(), metrics: newServerMetrics(backing),
 		audit: newAuditLog(nil, nil, logger), // serve.go upgrades this to a signed, file-backed log
 	}
 }
@@ -75,6 +85,7 @@ func (a *adminAPI) mux() http.Handler {
 	mux.HandleFunc("GET /api/agents", a.handleAgents)
 	mux.HandleFunc("GET /api/alerts", a.handleAlerts)
 	mux.HandleFunc("GET /api/alerts/{id}", a.handleAlertByID)
+	mux.HandleFunc("GET /api/alerts/{id}/triage", a.handleTriage)
 	mux.HandleFunc("GET /api/signals", a.handleSignals)
 	mux.HandleFunc("GET /api/rules", a.handleRules)
 	mux.HandleFunc("GET /api/stream", a.handleStream)
@@ -212,6 +223,72 @@ func (a *adminAPI) handleAlertByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, record)
+}
+
+// handleTriage produces a triage report for one alert (typically an incident): a
+// natural-language summary, severity, containment steps, and an optional rule
+// draft. It reconstructs the incident's context from the host's recent alerts,
+// then runs the configured summarizer — the offline template by default, or Claude
+// when the operator enabled it. Read-only: it surfaces analysis, queues nothing.
+func (a *adminAPI) handleTriage(w http.ResponseWriter, r *http.Request) {
+	record, ok := a.store.AlertByID(r.PathValue("id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "unknown alert")
+		return
+	}
+	incident := a.buildTriageIncident(record)
+	report, err := a.summarizer.Summarize(r.Context(), incident)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "triage failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+// buildTriageIncident assembles the structured incident triage needs from one
+// alert plus the host's recent alert history, deduping techniques so the kill
+// chain reads cleanly. The ATT&CK tactic for each technique is read from the
+// served ruleset itself, so containment advice stays in sync with the rules that
+// fired rather than a hand-maintained table.
+func (a *adminAPI) buildTriageIncident(record store.AlertRecord) triage.Incident {
+	tactics := a.tacticIndex()
+	history := a.store.QueryAlerts(store.AlertFilter{Hostname: record.Hostname, Limit: triageHostAlerts})
+	incident := triage.Incident{
+		ID: record.ID, Hostname: record.Hostname, ProcessName: record.ProcessName,
+		PID: record.PID, RiskScore: record.RiskScore,
+	}
+	seenTechnique := map[string]bool{}
+	for _, alert := range history {
+		incident.Alerts = append(incident.Alerts, triage.Alert{
+			RuleID: alert.RuleID, RuleName: alert.RuleName,
+			Severity: alert.Severity, Technique: alert.TechniqueID,
+		})
+		if alert.TechniqueID != "" && !seenTechnique[alert.TechniqueID] {
+			seenTechnique[alert.TechniqueID] = true
+			incident.Techniques = append(incident.Techniques, triage.Technique{
+				ID: alert.TechniqueID, Name: alert.TechniqueName, Tactic: tactics[alert.TechniqueID],
+			})
+		}
+	}
+	return incident
+}
+
+// tacticIndex maps each technique id in the served ruleset to its ATT&CK tactic.
+// A catalogue error yields an empty index — triage degrades to generic containment
+// rather than failing.
+func (a *adminAPI) tacticIndex() map[string]string {
+	catalogue, err := a.rules.Catalogue()
+	if err != nil {
+		a.logger.Warn("triage tactic index unavailable", "err", err)
+		return nil
+	}
+	index := make(map[string]string, len(catalogue))
+	for _, rule := range catalogue {
+		if rule.Technique.ID != "" {
+			index[rule.Technique.ID] = rule.Technique.Tactic
+		}
+	}
+	return index
 }
 
 // handleRules serves the rule catalogue (id/name/severity/technique) the console
