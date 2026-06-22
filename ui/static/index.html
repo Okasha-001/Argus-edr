@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,85 +7,120 @@
   <link rel="stylesheet" href="app.css" />
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <span class="logo">◆</span> ARGUS
-      <span class="tagline">eBPF EDR · control plane</span>
-    </div>
-    <div class="status">
-      <span id="conn" class="pill pill-off">live: connecting…</span>
-      <span id="version" class="muted"></span>
-    </div>
-  </header>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand"><span class="logo">◆</span> ARGUS <span class="tag">XDR</span></div>
+      <nav class="nav" aria-label="Primary">
+        <a data-route="overview"><span class="ic">▦</span> Overview</a>
+        <a data-route="alerts"><span class="ic">⚑</span> Alerts</a>
+        <a data-route="investigation"><span class="ic">⌖</span> Investigation</a>
+        <a data-route="detections"><span class="ic">❡</span> Detections</a>
+        <a data-route="fleet"><span class="ic">▤</span> Fleet</a>
+      </nav>
+      <div class="spacer"></div>
+      <div class="hint">Press <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>K</kbd> for commands</div>
+      <div class="hint">Read-only · enforcement &amp; fleet off by default</div>
+    </aside>
 
-  <nav>
-    <button class="tab active" data-view="fleet">Fleet</button>
-    <button class="tab" data-view="alerts">Live alerts</button>
-    <button class="tab" data-view="incident">Incident timeline</button>
-    <button class="tab" data-view="rules">Rule catalogue</button>
-  </nav>
+    <div class="main">
+      <header class="topbar">
+        <h1 id="page-title">Overview</h1>
+        <div class="grow"></div>
+        <button class="cmdk-trigger" id="cmdk-open" aria-label="Open command palette">
+          Search… <kbd>⌘K</kbd>
+        </button>
+        <span id="conn" class="pill off" role="status">connecting…</span>
+        <span id="version" class="muted mono"></span>
+        <button class="icon-btn" id="theme-toggle" aria-label="Toggle theme" title="Toggle theme">◐</button>
+      </header>
 
-  <main>
-    <section id="fleet" class="view active">
-      <div class="cards" id="fleet-cards"></div>
-      <h2>Agents</h2>
-      <table id="agents">
-        <thead><tr>
-          <th>Host</th><th>Status</th><th>Version</th><th>Kernel</th>
-          <th>Events</th><th>Alerts</th><th>Incidents</th><th>Rules</th><th>Last seen</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </section>
+      <div class="content">
+        <section id="overview" class="screen" aria-label="Overview">
+          <div class="tiles" id="ov-tiles"></div>
+          <div class="grid-2">
+            <div>
+              <h2 class="section-title">Latest incidents</h2>
+              <div class="table-wrap"><table><thead><tr>
+                <th>Time</th><th>Host</th><th>Rule</th><th>Risk</th>
+              </tr></thead><tbody id="ov-incidents"></tbody></table></div>
+            </div>
+            <div>
+              <h2 class="section-title">Recent alerts</h2>
+              <div class="table-wrap"><table><thead><tr>
+                <th>Time</th><th>Sev</th><th>Rule</th><th>Host</th>
+              </tr></thead><tbody id="ov-alerts"></tbody></table></div>
+            </div>
+          </div>
+        </section>
 
-    <section id="alerts" class="view">
-      <div class="toolbar">
-        <input id="f-host" placeholder="host" />
-        <select id="f-sev">
-          <option value="">any severity</option>
-          <option value="critical">critical</option>
-          <option value="high">high</option>
-          <option value="medium">medium</option>
-          <option value="low">low</option>
-        </select>
-        <input id="f-tech" placeholder="technique (e.g. T1059)" />
-        <label class="check"><input type="checkbox" id="f-inc" /> incidents only</label>
-        <button id="f-apply">Filter</button>
-        <span class="muted" id="alerts-count"></span>
+        <section id="alerts" class="screen" aria-label="Alerts">
+          <div class="toolbar">
+            <input id="f-host" placeholder="host" aria-label="Filter by host" />
+            <select id="f-sev" aria-label="Filter by severity">
+              <option value="">any severity</option>
+              <option value="critical">critical</option>
+              <option value="high">high</option>
+              <option value="medium">medium</option>
+              <option value="low">low</option>
+            </select>
+            <input id="f-tech" placeholder="technique (e.g. T1059)" aria-label="Filter by technique" />
+            <label class="check"><input type="checkbox" id="f-inc" /> incidents only</label>
+            <button class="btn" id="f-apply">Filter</button>
+            <span class="muted" id="alerts-count"></span>
+          </div>
+          <div class="table-wrap"><table><thead><tr>
+            <th>Time</th><th>Sev</th><th>Rule</th><th>Technique</th>
+            <th>Host</th><th>PID</th><th>Process</th><th>Dest</th><th>Risk</th>
+          </tr></thead><tbody id="alerts-body"></tbody></table></div>
+        </section>
+
+        <section id="investigation" class="screen" aria-label="Investigation">
+          <div class="toolbar">
+            <input id="i-host" placeholder="host to reconstruct" aria-label="Host" />
+            <button class="btn" id="i-load">Build chain</button>
+            <span class="muted">Reconstructs a host's alert chain · graph view lands in Phase 15</span>
+          </div>
+          <div class="grid-2">
+            <div id="timeline" class="timeline"></div>
+            <div id="triage" class="card"></div>
+          </div>
+        </section>
+
+        <section id="detections" class="screen" aria-label="Detections">
+          <div class="toolbar">
+            <input id="r-filter" placeholder="filter rules" aria-label="Filter rules" />
+            <span class="muted" id="rules-meta"></span>
+          </div>
+          <div id="coverage" class="tiles"></div>
+          <h2 class="section-title">Rules</h2>
+          <div class="table-wrap"><table><thead><tr>
+            <th>ID</th><th>Name</th><th>Sev</th><th>Technique</th><th>Tactic</th><th>Risk</th><th>On</th>
+          </tr></thead><tbody id="rules-body"></tbody></table></div>
+        </section>
+
+        <section id="fleet" class="screen" aria-label="Fleet">
+          <div class="tiles" id="fleet-tiles"></div>
+          <h2 class="section-title">Agents</h2>
+          <div class="table-wrap"><table><thead><tr>
+            <th>Host</th><th>Status</th><th>Version</th><th>Kernel</th>
+            <th>Events</th><th>Alerts</th><th>Incidents</th><th>Rules</th><th>Last seen</th>
+          </tr></thead><tbody id="fleet-body"></tbody></table></div>
+        </section>
       </div>
-      <table id="alerts-table">
-        <thead><tr>
-          <th>Time</th><th>Sev</th><th>Rule</th><th>Technique</th>
-          <th>Host</th><th>PID</th><th>Process</th><th>Dest</th><th>Risk</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </section>
+    </div>
+  </div>
 
-    <section id="incident" class="view">
-      <div class="toolbar">
-        <input id="i-host" placeholder="host to reconstruct" />
-        <button id="i-load">Build chain</button>
-        <span class="muted">Newest at top · reads alert history for one host</span>
-      </div>
-      <div id="timeline" class="timeline"></div>
-      <div id="triage" class="triage"></div>
-    </section>
+  <div class="overlay" id="overlay"></div>
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Detail"></aside>
 
-    <section id="rules" class="view">
-      <div class="toolbar"><span class="muted" id="rules-meta"></span></div>
-      <table id="rules-table">
-        <thead><tr>
-          <th>ID</th><th>Name</th><th>Sev</th><th>Technique</th><th>Tactic</th><th>Risk</th><th>On</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </section>
-  </main>
+  <div class="cmdk" id="cmdk" role="dialog" aria-modal="true" aria-label="Command palette">
+    <div class="box">
+      <input id="cmdk-input" placeholder="Type a command or screen…" aria-label="Command" />
+      <ul id="cmdk-list"></ul>
+    </div>
+  </div>
 
-  <footer class="muted">
-    ARGUS console · read-only · enforcement and fleet are off by default
-  </footer>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
 
   <script src="app.js"></script>
 </body>
