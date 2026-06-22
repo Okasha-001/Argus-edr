@@ -22,7 +22,7 @@ func testAdminAPI(t *testing.T, token string) *adminAPI {
 	if err := os.WriteFile(filepath.Join(dir, "r.yaml"), []byte(rule), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rules, err := ruleset.NewProvider(dir)
+	rules, err := ruleset.NewProvider(dir, "")
 	if err != nil {
 		t.Fatalf("ruleset: %v", err)
 	}

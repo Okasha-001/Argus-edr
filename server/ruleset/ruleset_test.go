@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/argus-edr/argus/internal/policy"
 )
 
 const ruleTemplate = `- id: %s
@@ -26,12 +28,45 @@ func writeRule(t *testing.T, dir, name, body string) {
 	}
 }
 
+func TestProviderShipsPolicyInBundle(t *testing.T) {
+	dir := t.TempDir()
+	writeRule(t, dir, "00.yaml", fmt.Sprintf(ruleTemplate, "R-1"))
+	policyPath := filepath.Join(t.TempDir(), "policy.yml")
+	if err := os.WriteFile(policyPath, []byte("response:\n  mode: dry-run\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	provider, err := NewProvider(dir, policyPath)
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	_, files := provider.Bundle()
+	for _, file := range files {
+		if file.Name == policy.FileName {
+			return // the policy rode along with the rules
+		}
+	}
+	t.Errorf("bundle should include %s; got %d files", policy.FileName, len(files))
+}
+
+func TestProviderRejectsInvalidPolicy(t *testing.T) {
+	dir := t.TempDir()
+	writeRule(t, dir, "00.yaml", fmt.Sprintf(ruleTemplate, "R-1"))
+	policyPath := filepath.Join(t.TempDir(), "policy.yml")
+	if err := os.WriteFile(policyPath, []byte("response:\n  mode: nonsense\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewProvider(dir, policyPath); err == nil {
+		t.Fatal("expected NewProvider to reject an invalid policy")
+	}
+}
+
 func TestProviderLoadsAndVersions(t *testing.T) {
 	dir := t.TempDir()
 	writeRule(t, dir, "00.yaml", fmt.Sprintf(ruleTemplate, "R-1"))
 	writeRule(t, dir, "10.yaml", fmt.Sprintf(ruleTemplate, "R-2"))
 
-	provider, err := NewProvider(dir)
+	provider, err := NewProvider(dir, "")
 	if err != nil {
 		t.Fatalf("NewProvider: %v", err)
 	}
@@ -50,7 +85,7 @@ func TestProviderLoadsAndVersions(t *testing.T) {
 func TestVersionStableAndChanges(t *testing.T) {
 	dir := t.TempDir()
 	writeRule(t, dir, "00.yaml", fmt.Sprintf(ruleTemplate, "R-1"))
-	provider, err := NewProvider(dir)
+	provider, err := NewProvider(dir, "")
 	if err != nil {
 		t.Fatalf("NewProvider: %v", err)
 	}
@@ -75,7 +110,7 @@ func TestVersionStableAndChanges(t *testing.T) {
 func TestProviderRejectsInvalidRules(t *testing.T) {
 	dir := t.TempDir()
 	writeRule(t, dir, "bad.yaml", "- id: R-1\n  name: no match block\n  severity: high\n")
-	if _, err := NewProvider(dir); err == nil {
+	if _, err := NewProvider(dir, ""); err == nil {
 		t.Fatal("expected NewProvider to reject a rule with no match block")
 	}
 }
@@ -83,7 +118,7 @@ func TestProviderRejectsInvalidRules(t *testing.T) {
 func TestReloadKeepsLastGoodBundle(t *testing.T) {
 	dir := t.TempDir()
 	writeRule(t, dir, "00.yaml", fmt.Sprintf(ruleTemplate, "R-1"))
-	provider, err := NewProvider(dir)
+	provider, err := NewProvider(dir, "")
 	if err != nil {
 		t.Fatalf("NewProvider: %v", err)
 	}

@@ -83,6 +83,23 @@ triggers a reload — `POST /api/rules/reload` or `SIGHUP`. The server re-valida
 bumps the version, and every agent converges on its next heartbeat. A reload that
 fails validation is rejected and the previous ruleset keeps serving.
 
+## Policy distribution
+
+The bundle can carry more than rules: a **policy** document (`--policy-file`, or
+`ARGUS_POLICY_FILE`) distributes posture — today the fleet-wide `response.mode`.
+The server validates it at load (an invalid policy refuses the reload, exactly
+like a broken rule) and folds it into the same content hash, so a posture change
+bumps the version and converges on the next heartbeat. It rides in the bundle as
+the reserved `argus-policy.yml` entry, which the agent's `*.yaml` rule glob
+ignores, so it never lands in the rules directory.
+
+An agent applies the policy through its responder, which clamps the pushed mode
+to the host's local `response.max_mode` ceiling. A policy can therefore **lower**
+posture across the fleet but can **never** escalate past what the operator pinned
+on a host — the same safety invariant as a pushed `SET_RESPONSE_MODE`. A policy
+that fails to parse is logged and skipped on the agent, never fatal. See
+`configs/policy.sample.yml` for the format and `docs/SAFETY.md` for the ceiling.
+
 ## Commands
 
 `Heartbeat` returns commands queued for the agent (operators queue them through

@@ -73,7 +73,7 @@ func startServer(t *testing.T, token string) *harness {
 
 	rulesDir := filepath.Join(dir, "rules")
 	writeFiles(t, rulesDir, map[string]string{"00-a.yaml": ruleA, "10-b.yaml": ruleB})
-	provider, err := ruleset.NewProvider(rulesDir)
+	provider, err := ruleset.NewProvider(rulesDir, "")
 	if err != nil {
 		t.Fatalf("rule provider: %v", err)
 	}

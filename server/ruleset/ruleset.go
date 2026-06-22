@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"hash"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/argus-edr/argus/internal/detect"
 	"github.com/argus-edr/argus/internal/model"
+	"github.com/argus-edr/argus/internal/policy"
 )
 
 // versionLen is how many hex characters of the content hash name a version. A
@@ -33,7 +35,8 @@ type File struct {
 // swaps in a new bundle atomically, so an in-flight GetRules never sees a
 // half-updated set.
 type Provider struct {
-	dir string
+	dir        string
+	policyFile string // optional posture document distributed with the rules
 
 	mu      sync.RWMutex
 	version string
@@ -42,9 +45,10 @@ type Provider struct {
 
 // NewProvider loads and validates the rules in dir, returning an error if any
 // rule fails to compile so a misconfigured server refuses to start rather than
-// shipping broken rules.
-func NewProvider(dir string) (*Provider, error) {
-	provider := &Provider{dir: dir}
+// shipping broken rules. policyFile, when non-empty, is a posture document
+// (internal/policy) shipped to agents in the bundle; "" distributes rules only.
+func NewProvider(dir, policyFile string) (*Provider, error) {
+	provider := &Provider{dir: dir, policyFile: policyFile}
 	if err := provider.Reload(); err != nil {
 		return nil, err
 	}
@@ -79,6 +83,13 @@ func (p *Provider) Reload() error {
 		hash.Write(content)
 		files = append(files, File{Name: name, Content: content})
 	}
+	policyFile, err := p.loadPolicy(hash)
+	if err != nil {
+		return err
+	}
+	if policyFile != nil {
+		files = append(files, *policyFile)
+	}
 	version := hex.EncodeToString(hash.Sum(nil))[:versionLen]
 
 	p.mu.Lock()
@@ -86,6 +97,26 @@ func (p *Provider) Reload() error {
 	p.files = files
 	p.mu.Unlock()
 	return nil
+}
+
+// loadPolicy reads and validates the optional posture document, folds it into the
+// version hash, and returns it as a bundle file. A missing path is rules-only
+// distribution (not an error); a present-but-invalid policy fails the reload so
+// the server never ships a posture agents would reject.
+func (p *Provider) loadPolicy(digest hash.Hash) (*File, error) {
+	if p.policyFile == "" {
+		return nil, nil
+	}
+	content, err := os.ReadFile(p.policyFile)
+	if err != nil {
+		return nil, fmt.Errorf("read policy file %s: %w", p.policyFile, err)
+	}
+	if _, err := policy.Parse(content); err != nil {
+		return nil, err
+	}
+	fmt.Fprintf(digest, "%s\x00%d\x00", policy.FileName, len(content))
+	digest.Write(content)
+	return &File{Name: policy.FileName, Content: content}, nil
 }
 
 // Version returns the current bundle's content version.

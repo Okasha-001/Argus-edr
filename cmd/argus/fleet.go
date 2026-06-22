@@ -16,6 +16,7 @@ import (
 	"github.com/argus-edr/argus/internal/intel"
 	"github.com/argus-edr/argus/internal/model"
 	"github.com/argus-edr/argus/internal/pipeline"
+	"github.com/argus-edr/argus/internal/policy"
 	"github.com/argus-edr/argus/internal/respond"
 	"github.com/argus-edr/argus/internal/version"
 )
@@ -230,8 +231,31 @@ func (f *fleetRunner) syncRules(ctx context.Context) {
 		engine.SetIntel(f.intel) // carry threat intel across the rule reload
 	}
 	f.pipeline.SetEngine(engine)
+	f.applyPolicy(rules.Files)
 	f.conn.rulesVersion = rules.Version
 	f.logger.Info("applied pushed ruleset", "version", rules.Version, "files", len(rules.Files))
+}
+
+// applyPolicy applies the fleet posture document if the pushed bundle carries one.
+// It sets the response mode through the responder, which clamps to the local
+// max_mode ceiling — so a pushed policy can lower the posture but never escalate
+// past what the host pinned. An invalid policy is logged and skipped, never fatal.
+func (f *fleetRunner) applyPolicy(files []fleet.RuleFile) {
+	for _, file := range files {
+		if filepath.Base(file.Name) != policy.FileName {
+			continue
+		}
+		parsed, err := policy.Parse(file.Content)
+		if err != nil {
+			f.logger.Warn("ignoring invalid pushed policy", "err", err)
+			return
+		}
+		if parsed.Response.Mode != "" {
+			f.responder.SetMode(respond.ParseMode(parsed.Response.Mode))
+			f.logger.Info("applied pushed policy", "response_mode", parsed.Response.Mode)
+		}
+		return
+	}
 }
 
 // writeRuleFiles persists pushed rule files into dir. It reduces each name to its

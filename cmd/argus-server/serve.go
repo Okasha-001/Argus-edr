@@ -48,6 +48,7 @@ func runServe(args []string) error {
 	rbacFile := flags.String("rbac-file", os.Getenv("ARGUS_RBAC_FILE"), "YAML of token/role grants (viewer|operator|admin) for finer admin authorization")
 	auditFile := flags.String("audit-log", os.Getenv("ARGUS_AUDIT_LOG"), "append admin actions to this file as a tamper-evident hash chain")
 	auditKey := flags.String("audit-key", os.Getenv("ARGUS_AUDIT_KEY"), "HMAC key that signs audit entries (empty = hash chain only)")
+	policyFile := flags.String("policy-file", os.Getenv("ARGUS_POLICY_FILE"), "posture document distributed to agents in the rule bundle (empty = rules only)")
 	storeKind := flags.String("store", store.BackendMemory, "state backend: memory (ephemeral) or sqlite (durable)")
 	dsn := flags.String("dsn", "", "data source for --store sqlite (database file path)")
 	ttl := flags.Duration("heartbeat-ttl", 90*time.Second, "treat an agent offline after this long without a heartbeat")
@@ -67,7 +68,7 @@ func runServe(args []string) error {
 		return err
 	}
 
-	rules, err := ruleset.NewProvider(*rulesDir)
+	rules, err := ruleset.NewProvider(*rulesDir, *policyFile)
 	if err != nil {
 		return err
 	}

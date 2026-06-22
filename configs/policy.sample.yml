@@ -1,0 +1,15 @@
+# ARGUS fleet policy — distributed to agents alongside the detection rules.
+#
+# The control plane ships this document inside the versioned rule bundle (as the
+# reserved `argus-policy.yml` entry — the agent's *.yaml rule glob ignores it).
+# An agent applies the posture through its responder, which clamps any pushed
+# mode to the host's local `response.max_mode` ceiling. A policy can therefore
+# LOWER an agent's posture fleet-wide but can NEVER escalate past what the
+# operator pinned on the host. See docs/FLEET.md and docs/SAFETY.md.
+#
+# Point the server at this file with `--policy-file` (or ARGUS_POLICY_FILE).
+# Omit it to distribute rules only.
+response:
+  # off | dry-run | enforce. Off and observe-only by default — change this only
+  # after you have validated detections and taken a host snapshot.
+  mode: dry-run

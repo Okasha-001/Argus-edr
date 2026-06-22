@@ -134,6 +134,7 @@ Binds to `127.0.0.1:8080` by default (not mutually authenticated — keep local)
 argus-server serve      --grpc :8443 --http 127.0.0.1:8080 --rules ./rules \
                         --ca … --cert … --key …   (or --dev)  --token <secret>
                         --store memory|sqlite --dsn /var/lib/argus/fleet.db \
+                        --policy-file ./configs/policy.sample.yml \
                         --correlate-window 5m --correlate-min-hosts 3 --heartbeat-ttl 90s
 argus-server gen-certs  --dir ./fleet-certs --dns argus-server
 argus run               # agent; fleet activated by the config's fleet.enabled
