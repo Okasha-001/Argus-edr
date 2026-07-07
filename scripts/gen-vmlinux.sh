@@ -33,16 +33,38 @@ ci_download() {
     x86_64|amd64) arch="x86" ;;
     aarch64|arm64) arch="aarch64" ;;
   esac
-  local url="https://raw.githubusercontent.com/libbpf/vmlinux.h/main/include/${arch}/vmlinux.h"
+  local base_url="https://raw.githubusercontent.com/libbpf/vmlinux.h/main/include/${arch}"
+  local url="${base_url}/vmlinux.h"
   echo "CI mode: downloading pre-built vmlinux.h for ${arch}…" >&2
+  
+  local tmp_out
+  tmp_out="$(mktemp)"
+  
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --retry 3 -o "$out" "$url"
+    curl -fsSL --retry 3 -o "$tmp_out" "$url"
   elif command -v wget >/dev/null 2>&1; then
-    wget -q -O "$out" "$url"
+    wget -q -O "$tmp_out" "$url"
   else
     echo "error: neither curl nor wget is available." >&2
+    rm -f "$tmp_out"
     exit 1
   fi
+
+  # Resolve Git symlink if the content is just a filename pointing to a versioned header
+  local target
+  target="$(tr -d '\r\n' < "$tmp_out" | xargs)"
+  if [[ "$target" =~ ^vmlinux_[0-9].*\.h$ ]]; then
+    echo "CI mode: resolving symlink target ${target}…" >&2
+    local resolved_url="${base_url}/${target}"
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL --retry 3 -o "$out" "$resolved_url"
+    elif command -v wget >/dev/null 2>&1; then
+      wget -q -O "$out" "$resolved_url"
+    fi
+  else
+    mv "$tmp_out" "$out"
+  fi
+  rm -f "$tmp_out" || true
   echo "wrote $out ($(wc -l < "$out") lines) [CI pre-built]"
 }
 
