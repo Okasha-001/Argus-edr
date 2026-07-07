@@ -29,7 +29,11 @@ done
 ci_download() {
   local arch
   arch="$(uname -m)"
-  local url="https://raw.githubusercontent.com/libbpf/vmlinux.h/main/${arch}/vmlinux.h"
+  case "$arch" in
+    x86_64|amd64) arch="x86" ;;
+    aarch64|arm64) arch="aarch64" ;;
+  esac
+  local url="https://raw.githubusercontent.com/libbpf/vmlinux.h/main/include/${arch}/vmlinux.h"
   echo "CI mode: downloading pre-built vmlinux.h for ${arch}…" >&2
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL --retry 3 -o "$out" "$url"
