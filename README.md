@@ -111,9 +111,8 @@ Enforcement can lock you out of a host. ARGUS is **observe-only out of the box**
 
 ## Roadmap
 
-ARGUS grows in shippable phases — telemetry → detection → enforcement →
-hardening → integration → correlation → fleet control plane → UI. See
-[docs/ROADMAP.md](docs/ROADMAP.md).
+The roadmap tracks live-kernel validation, deeper platform coverage, and
+production hardening. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## License
 

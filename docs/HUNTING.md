@@ -1,4 +1,4 @@
-# Threat Hunting with ARQL (Platform v2 — Phase 14)
+# Threat Hunting with ARQL
 
 Detection rules tell you about the **known**. Hunting lets an analyst search the
 event lake for the **unknown** — a hypothesis expressed as a query, answered from
@@ -7,9 +7,8 @@ over `internal/eventstore`, evaluated against the *same* fields the detection
 engine sees (`internal/model/fields.go`), so a hunt and a rule always agree on
 what a field means.
 
-This is Phase 14 of `docs/PLATFORM_V2_MASTER_PLAN.md`. It honours the platform
-principles: it adds no required infrastructure (the default lake is in-memory),
-sends nothing anywhere, and a proven hunt converts into a rule in one step.
+Hunting adds no required infrastructure: the default lake is in-memory, no data
+is sent anywhere, and a proven hunt converts into a rule in one step.
 
 ## The language
 
@@ -102,7 +101,7 @@ that was never configured returns **503**, not an empty result.
 
 A hunt that proves useful becomes a detection rule with one call. `to-rule`
 projects the query's class and `where`/pipe filters into a `match` tree and
-returns rule YAML ready to drop into `rules/` and reload (Phase 16). Sequence
+returns rule YAML ready to drop into `rules/` and reload. Sequence
 hunts describe a temporal chain a single per-event rule cannot express, so they
 are rejected with a clear message rather than producing a rule that means
 something subtly different.
@@ -110,7 +109,7 @@ something subtly different.
 The conversion is covered by a round-trip test
 (`internal/hunt/torule_test.go`): the generated YAML is loaded by the real rule
 engine and must fire on a matching event and stay silent on a non-matching one —
-the Phase 14 → Phase 16 promise is enforced, not just asserted on text.
+the hunt-to-rule path is enforced, not just asserted on text.
 
 ## In the console
 
@@ -125,5 +124,5 @@ runs the query; the command palette (`⌘/Ctrl+K`) jumps to the screen.
   before filtering, so an open-ended query cannot exhaust memory; columnar
   backends push predicates down instead of scanning.
 - Hunting is pure read: it queries history and never issues a response action.
-  Turning a hunt into an automated response is the job of SOAR (Phase 17), behind
+  Turning a hunt into an automated response is the job of SOAR, behind
   the usual `off → dry-run → enforce` gate.

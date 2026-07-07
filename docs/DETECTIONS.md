@@ -55,7 +55,7 @@ shipped signatures target malicious *binaries* (miners, reverse-shell tools, the
 EICAR test file); interpreted scripts are out of scope for this path. See
 `docs/YARA.md`.
 
-## Self-protection (Phase 6)
+## Self-protection
 
 ARGUS watches for attempts to disable it. Kernel LSM hooks (gated by
 `response.mode`) deny a `kill -9`/`SIGSTOP` or a `ptrace` aimed at the agent and
@@ -128,6 +128,6 @@ pays nothing — the safe default.
 
 ## Adding a detection
 
-See the `detection-rules` skill (`.claude/skills/detection-rules`). In short:
-map to a real technique, reference only fields that exist and event types a
-sensor emits, prove it with a replay fixture, and update this file.
+Map the rule to a real ATT&CK technique, reference only fields listed in
+`internal/model/fields.go` and event types a sensor emits, prove it with a replay
+fixture, and update this file.

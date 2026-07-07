@@ -1,11 +1,8 @@
-# Detection-as-Code (Platform v2 — Phase 16)
+# Detection-as-Code
 
-Detections in ARGUS are code: versioned, tested, signed, and measured. Phase 16
-turns the rule set into an ecosystem — a test harness that proves every rule
-behaves, shareable signed rule packs, a Sigma importer, and a live ATT&CK
-coverage view — all FOSS and offline.
-
-This is Phase 16 of `docs/PLATFORM_V2_MASTER_PLAN.md`.
+Detections in ARGUS are code: versioned, tested, signed, and measured. The rule
+workflow includes a test harness that proves every rule behaves, shareable signed
+rule packs, a Sigma importer, and a live ATT&CK coverage view.
 
 ## Rule tests (`make test-rules`)
 
@@ -93,7 +90,7 @@ the output loads** — enforced by `FuzzConvert`.
 
 ## The loop
 
-Hunting (Phase 14) finds the unknown; **Save as rule** turns a proven hunt into
+Hunting finds the unknown; **Save as rule** turns a proven hunt into
 rule YAML; a fixture pins its behaviour; `make test-rules` keeps it honest; a pack
 shares it, signed; the Navigator shows where it lands on ATT&CK. Detection is
 code, all the way round.

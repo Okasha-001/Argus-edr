@@ -151,9 +151,9 @@ type huntToRuleRequest struct {
 	} `json:"technique"`
 }
 
-// handleHuntToRule turns a saved hunt into a detection rule and returns the YAML,
-// closing the loop to Phase 16. It only generates content — it does not install
-// the rule (that is an audited admin action: drop it in the rules dir and reload),
+// handleHuntToRule turns a saved hunt into a detection rule and returns the YAML.
+// It only generates content; it does not install the rule (that is an audited
+// admin action: drop it in the rules dir and reload),
 // so this endpoint stays read-only and open like the rest of hunting.
 func (a *adminAPI) handleHuntToRule(w http.ResponseWriter, r *http.Request) {
 	var req huntToRuleRequest

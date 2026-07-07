@@ -1,13 +1,12 @@
-# SOAR & Response Playbooks (Platform v2 — Phase 17)
+# SOAR & Response Playbooks
 
 SOAR connects detection to action: when an alert matches a playbook's trigger,
 ARGUS works its steps — notify a human, open a case, run a hunt for context, or
 ask an agent to kill or quarantine. It is built to be **safe by default** and
 fully self-hosted, with no required or paid integration.
 
-This is Phase 17 of `docs/PLATFORM_V2_MASTER_PLAN.md`. Read `docs/SAFETY.md`
-first — automation that can kill processes deserves the same care as the response
-engine it drives.
+Read `docs/SAFETY.md` first. Automation that can kill processes deserves the
+same care as the response engine it drives.
 
 ## Three gates, all off by default
 
@@ -65,7 +64,7 @@ All optional, all self-hosted-friendly, none required or paid:
 | `--notify-smtp host:port` + `--notify-from` + `--notify-to` | email |
 
 These are the only components that make an outbound connection, and only to an
-endpoint you configured — the zero-phone-home promise holds (Phase 21).
+endpoint you configured.
 
 ## API
 

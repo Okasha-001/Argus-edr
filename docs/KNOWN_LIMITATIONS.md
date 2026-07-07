@@ -13,7 +13,8 @@ Stated plainly, because a security tool that hides its gaps is dangerous.
   ring buffer. Reads of the credential files are instead caught at the open
   chokepoint by the `security_file_open` sensor (`/etc/shadow`, `/etc/gshadow`);
   any other read-only open is seen only via replay. That sensor is detection
-  only — denying a read is Phase 6 (an LSM `file_open` hook).
+  only; enforcement for those credential-file reads lives in the LSM
+  `file_open` hook.
 - **DNS capture is UDP `sendto` only.** Query names are extracted (the sensor
   forwards the raw query bytes from a port-53 `sendto`; the agent parses
   `dns.question.name`), but `sendmsg`-based, TCP and IPv6 resolvers are not yet

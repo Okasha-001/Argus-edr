@@ -2,7 +2,7 @@
 // language over the event lake (internal/eventstore) that lets an analyst search
 // for the unknown instead of waiting for a rule to fire. It reuses the same
 // rule-visible fields the detection engine sees, so a hunt that proves useful
-// can become a rule (Phase 16).
+// can become a rule.
 //
 // Example queries:
 //

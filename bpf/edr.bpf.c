@@ -285,8 +285,8 @@ int handle_fchmodat(struct trace_event_raw_sys_enter *ctx)
 // there. security_file_open is the open chokepoint for every path regardless of
 // syscall; we match the credential files cheaply by basename + parent dir (no
 // full-path walk) and forward the canonical path as an open event, so the same
-// R-0002 rule fires on a live read. Detection only — a kprobe cannot deny; that
-// is Phase 6 (LSM file_open).
+// R-0002 rule fires on a live read. Detection only: a kprobe cannot deny; the
+// LSM file_open program handles enforcement.
 SEC("kprobe/security_file_open")
 int BPF_KPROBE(handle_file_open, struct file *file)
 {

@@ -2,11 +2,6 @@ package triage
 
 import (
 	"context"
-	"encoding/json"
-	"io"
-	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -81,100 +76,9 @@ func TestTemplateHandlesEmptyIncident(t *testing.T) {
 	}
 }
 
-func TestNewSelectsTemplateUnlessOptedIn(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	cases := []struct {
-		name string
-		cfg  Config
-	}{
-		{"disabled", Config{Enabled: false, Provider: ProviderClaude, APIKey: "k"}},
-		{"template provider", Config{Enabled: true, Provider: ProviderTemplate, APIKey: "k"}},
-		{"no key", Config{Enabled: true, Provider: ProviderClaude, APIKey: ""}},
+func TestNewReturnsTemplateSummarizer(t *testing.T) {
+	summarizer := New()
+	if _, ok := summarizer.(*templateSummarizer); !ok {
+		t.Error("New() should return the template summarizer")
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if _, ok := New(tc.cfg, logger).(*templateSummarizer); !ok {
-				t.Errorf("expected the template summarizer for %s", tc.name)
-			}
-		})
-	}
-	enabled := Config{Enabled: true, Provider: ProviderClaude, APIKey: "k"}
-	if _, ok := New(enabled, logger).(*fallbackSummarizer); !ok {
-		t.Error("enabled Claude provider with a key should return the fallback summarizer")
-	}
-}
-
-func TestClaudeSummarizerParsesReport(t *testing.T) {
-	want := Report{Summary: "Cryptominer beaconing out.", Severity: "critical",
-		Containment: []string{"Isolate the host."}, RuleDraft: "rule X {}"}
-	server := stubAPI(t, http.StatusOK, claudeJSON(t, want, "end_turn"))
-	defer server.Close()
-
-	summarizer := newClaudeSummarizer(Config{APIKey: "k", Endpoint: server.URL})
-	got, err := summarizer.Summarize(context.Background(), killChain())
-	if err != nil {
-		t.Fatalf("summarize: %v", err)
-	}
-	if got.Summary != want.Summary || got.Severity != want.Severity || got.RuleDraft != want.RuleDraft {
-		t.Errorf("parsed report = %+v, want %+v", got, want)
-	}
-	if got.Source != ProviderClaude {
-		t.Errorf("source = %q, want claude", got.Source)
-	}
-}
-
-func TestClaudeRefusalFallsBackToTemplate(t *testing.T) {
-	server := stubAPI(t, http.StatusOK, claudeJSON(t, Report{Summary: "ignored"}, "refusal"))
-	defer server.Close()
-	assertFallsBackToTemplate(t, server.URL)
-}
-
-func TestClaudeHTTPErrorFallsBackToTemplate(t *testing.T) {
-	server := stubAPI(t, http.StatusInternalServerError, []byte(`{"error":"overloaded"}`))
-	defer server.Close()
-	assertFallsBackToTemplate(t, server.URL)
-}
-
-// assertFallsBackToTemplate drives the full New() seam against a failing API and
-// asserts the analyst still gets a deterministic template report.
-func assertFallsBackToTemplate(t *testing.T, endpoint string) {
-	t.Helper()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	summarizer := New(Config{Enabled: true, Provider: ProviderClaude, APIKey: "k", Endpoint: endpoint}, logger)
-	report, err := summarizer.Summarize(context.Background(), killChain())
-	if err != nil {
-		t.Fatalf("fallback should not error: %v", err)
-	}
-	if report.Source != ProviderTemplate {
-		t.Errorf("source = %q, want template after API failure", report.Source)
-	}
-}
-
-func stubAPI(t *testing.T, status int, body []byte) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("x-api-key") == "" || r.Header.Get("anthropic-version") == "" {
-			t.Errorf("missing required headers: %v", r.Header)
-		}
-		w.WriteHeader(status)
-		_, _ = w.Write(body)
-	}))
-}
-
-// claudeJSON builds a Messages API response whose single text block is the JSON
-// report — the exact shape parseReport expects.
-func claudeJSON(t *testing.T, report Report, stopReason string) []byte {
-	t.Helper()
-	inner, err := json.Marshal(report)
-	if err != nil {
-		t.Fatal(err)
-	}
-	outer, err := json.Marshal(messagesResponse{
-		Content:    []contentBlock{{Type: "text", Text: string(inner)}},
-		StopReason: stopReason,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return outer
 }

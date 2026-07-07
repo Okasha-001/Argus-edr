@@ -1,8 +1,8 @@
 # Roadmap
 
-ARGUS grows in shippable phases — each one a working, demonstrable version. A
-security platform is great because of breadth, depth and engineering quality, not
-line count; the phases add real capability, not padding.
+ARGUS grows through shippable milestones, each one a working, demonstrable
+version. A security platform is great because of breadth, depth and engineering
+quality, not line count; every milestone should add real capability.
 
 ## Done
 
@@ -43,8 +43,8 @@ line count; the phases add real capability, not padding.
 - **Sensors:** done — ptrace (T1055), module/bpf load (T1547.006), memfd exec
   (T1620), RWX mmap (T1055), setuid (T1548), DNS query names (T1071.004), IPv6
   endpoints, and a `security_file_open` read sensor that closes the R-0002 live
-  gap. The kernel-level *deny* on file_open is now done (Phase 6). Remaining:
-  container escape (T1611).
+  gap. Kernel-level `file_open` denial is now done. Remaining: container escape
+  (T1611).
 - **Detection:** done — 56 rules across the full ATT&CK kill chain plus a pure-Go
   YARA engine (`yara.matched` / R-0073); see `docs/ATTACK_COVERAGE.md`. Next:
   deeper cross-event correlation.
@@ -71,9 +71,8 @@ line count; the phases add real capability, not padding.
   `docs/CONTROL_PLANE.md`. Remaining: cert revocation (CRL/OCSP), HA control plane.
 - **UI:** done — an embedded, dependency-free web console for fleet, live alerts
   (SSE) and incident timelines, built on the admin API (`docs/CONTROL_PLANE.md`).
-- **LLM-assisted triage:** done — `internal/triage` turns an incident into a
-  summary + severity + containment + optional rule draft, offline by default with
-  an opt-in Claude provider, surfaced on the incident timeline. See `docs/TRIAGE.md`.
+- **Incident triage:** done — `internal/triage` turns an incident into a
+  summary + severity + containment + optional rule draft, offline, surfaced on the incident timeline. See `docs/TRIAGE.md`.
 - **Supply chain:** done — deb/rpm packaging (nfpm), SBOM (syft), cosign-signed
   releases, and a Helm chart. See `docs/PACKAGING.md`.
 - **Cross-platform:** the event source is now the only platform-specific layer; an

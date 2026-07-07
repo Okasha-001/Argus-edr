@@ -55,8 +55,8 @@ detects, responds and ships it.
 
 `bpf/common.h` and `internal/decode/wire.go` describe the same 848-byte record.
 Field order avoids padding; `MAX_ARGS_LEN` is a power of two so the argv loop can
-mask its write offset for the verifier. The two files must change together — see
-the `ebpf-sensors` skill and `internal/decode/wire_test.go`.
+mask its write offset for the verifier. The two files must change together, and
+`internal/decode/wire_test.go` locks the expected layout.
 
 ## Packages
 

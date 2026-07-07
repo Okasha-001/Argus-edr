@@ -23,7 +23,6 @@ import (
 	"github.com/argus-edr/argus/internal/fleet"
 	"github.com/argus-edr/argus/internal/fleet/fleetpb"
 	"github.com/argus-edr/argus/internal/integrations"
-	"github.com/argus-edr/argus/internal/triage"
 	"github.com/argus-edr/argus/internal/version"
 	"github.com/argus-edr/argus/server/api"
 	"github.com/argus-edr/argus/server/correlate"
@@ -53,8 +52,6 @@ func runServe(args []string) error {
 	auditFile := flags.String("audit-log", os.Getenv("ARGUS_AUDIT_LOG"), "append admin actions to this file as a tamper-evident hash chain")
 	auditKey := flags.String("audit-key", os.Getenv("ARGUS_AUDIT_KEY"), "HMAC key that signs audit entries (empty = hash chain only)")
 	policyFile := flags.String("policy-file", os.Getenv("ARGUS_POLICY_FILE"), "posture document distributed to agents in the rule bundle (empty = rules only)")
-	triageProvider := flags.String("triage", triage.ProviderTemplate, "incident triage provider: template (offline) or claude (LLM; needs ANTHROPIC_API_KEY)")
-	triageModel := flags.String("triage-model", "", "Claude model id for --triage claude (default: latest Opus)")
 	storeKind := flags.String("store", store.BackendMemory, "state backend: memory (ephemeral) or sqlite (durable)")
 	dsn := flags.String("dsn", "", "data source for --store sqlite (database file path)")
 	eventStoreKind := flags.String("event-store", eventstore.BackendMemory, "event lake for threat hunting: memory (ephemeral) or sqlite (point --event-dsn at the lake agents write to)")
@@ -111,13 +108,7 @@ func runServe(args []string) error {
 	if issuer != nil {
 		logger.Info("agent certificate rotation enabled (CA key loaded)")
 	}
-	if *triageProvider == triage.ProviderClaude {
-		admin.summarizer = triage.New(triage.Config{
-			Enabled: true, Provider: triage.ProviderClaude,
-			APIKey: os.Getenv("ANTHROPIC_API_KEY"), Model: *triageModel,
-		}, logger)
-		logger.Info("incident triage: claude provider", "key_set", os.Getenv("ANTHROPIC_API_KEY") != "")
-	}
+
 	if *auditFile != "" {
 		sink, err := os.OpenFile(*auditFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {

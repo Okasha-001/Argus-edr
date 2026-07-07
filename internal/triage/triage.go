@@ -2,19 +2,14 @@
 // report — "what happened, how bad, what to do". It is a leaf utility (it imports
 // nothing from ARGUS) so both the agent and the control plane can use it.
 //
-// Two summarizers implement the same interface. The template summarizer is
-// deterministic and works with no network — it is the default and the test path.
-// The Claude summarizer (claude.go) calls an LLM for a richer narrative and is
-// used only when explicitly enabled with an API key; on any failure it falls back
-// to the template, so triage always returns a report and a misconfiguration never
-// breaks the caller. No incident data leaves the process unless the operator turns
-// the Claude provider on and supplies a key.
+// The template summarizer is deterministic and works with no network — it renders
+// a factual summary, severity, and concrete containment steps from the incident's
+// own fields.
 package triage
 
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 )
@@ -46,8 +41,7 @@ type Incident struct {
 	Alerts      []Alert
 }
 
-// Report is the triage output. Source records which summarizer produced it so the
-// console can tell an analyst whether they are reading a template or an LLM summary.
+// Report is the triage output.
 type Report struct {
 	Summary     string   `json:"summary"`
 	Severity    string   `json:"severity"`
@@ -61,53 +55,13 @@ type Summarizer interface {
 	Summarize(ctx context.Context, incident Incident) (Report, error)
 }
 
-// Provider names for Config.Provider.
-const (
-	ProviderTemplate = "template"
-	ProviderClaude   = "claude"
-)
+// ProviderTemplate is the provider name for the built-in template summarizer.
+const ProviderTemplate = "template"
 
-// Config selects and configures a Summarizer. APIKey is read from the environment
-// by the caller, never from a config file, so a secret is never committed.
-type Config struct {
-	Enabled   bool
-	Provider  string
-	APIKey    string
-	Model     string
-	Endpoint  string
-	MaxTokens int
-}
-
-// New returns the Summarizer the config asks for. It returns the template
-// summarizer unless the Claude provider is explicitly enabled with a key, in which
-// case it returns a Claude summarizer that falls back to the template on any error.
-// This is the single seam that enforces "no data leaves without explicit opt-in".
-func New(cfg Config, logger *slog.Logger) Summarizer {
-	template := &templateSummarizer{}
-	if !cfg.Enabled || cfg.Provider != ProviderClaude || cfg.APIKey == "" {
-		return template
-	}
-	return &fallbackSummarizer{primary: newClaudeSummarizer(cfg), fallback: template, logger: logger}
-}
-
-// fallbackSummarizer tries the primary (Claude) summarizer and falls back to the
-// template on any error, so a network blip, a refusal or a bad key degrades to a
-// deterministic report rather than failing the request.
-type fallbackSummarizer struct {
-	primary  Summarizer
-	fallback Summarizer
-	logger   *slog.Logger
-}
-
-func (f *fallbackSummarizer) Summarize(ctx context.Context, incident Incident) (Report, error) {
-	report, err := f.primary.Summarize(ctx, incident)
-	if err != nil {
-		if f.logger != nil {
-			f.logger.Warn("triage provider failed, using template summary", "err", err)
-		}
-		return f.fallback.Summarize(ctx, incident)
-	}
-	return report, nil
+// New returns a Summarizer. The template summarizer is deterministic, works
+// offline, and is the default for all environments.
+func New() Summarizer {
+	return &templateSummarizer{}
 }
 
 // templateSummarizer renders a factual report from the incident's own fields with
@@ -165,8 +119,7 @@ const (
 	riskMedium   = 50
 )
 
-// SeverityForRisk maps a risk score to a severity label, shared so the template and
-// the Claude prompt agree on the same scale.
+// SeverityForRisk maps a risk score to a severity label.
 func SeverityForRisk(risk int) string {
 	switch {
 	case risk >= riskCritical:
@@ -225,8 +178,8 @@ func orUnknown(value string) string {
 	return value
 }
 
-// sortedTactics returns the distinct tactics in the incident, used by the Claude
-// prompt to summarize the kill chain.
+// sortedTactics returns the distinct tactics in the incident, used by the
+// template to summarize the kill chain.
 func sortedTactics(techniques []Technique) []string {
 	seen := map[string]bool{}
 	var tactics []string

@@ -11,8 +11,8 @@ import (
 
 // TestToRuleRoundTrips proves the converter emits a rule the real detection
 // engine loads and runs: the generated rule must fire on an event the hunt
-// matched and stay silent on one it did not. This is the Phase 14 → Phase 16
-// promise — a proven hunt becomes a working rule — enforced, not asserted on text.
+// matched and stay silent on one it did not. A proven hunt becomes a working
+// rule, enforced by the real engine rather than asserted on text.
 func TestToRuleRoundTrips(t *testing.T) {
 	query, err := Compile(`exec where process.name in ("bash", "sh") and process.parent.name == "nginx"`)
 	if err != nil {

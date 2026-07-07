@@ -11,10 +11,23 @@ if [[ ! -r /sys/kernel/btf/vmlinux ]]; then
   exit 1
 fi
 
-if ! command -v bpftool >/dev/null 2>&1; then
-  echo "error: bpftool not found — install linux-tools for your kernel." >&2
+# Try to find a working bpftool binary. The default wrapper might fail if there's a kernel version mismatch.
+BPFTOOL=""
+if command -v bpftool >/dev/null 2>&1 && bpftool --version >/dev/null 2>&1; then
+  BPFTOOL="bpftool"
+else
+  # Search for any installed bpftool binary directly in the linux-tools directories
+  # to bypass the broken wrapper script.
+  candidate=$(find /usr/lib/linux-tools /usr/lib/linux-tools-* -name bpftool -type f -executable 2>/dev/null | head -n 1)
+  if [[ -n "$candidate" ]]; then
+    BPFTOOL="$candidate"
+  fi
+fi
+
+if [[ -z "$BPFTOOL" ]]; then
+  echo "error: bpftool not found or not working — install linux-tools for your kernel." >&2
   exit 1
 fi
 
-bpftool btf dump file /sys/kernel/btf/vmlinux format c > "$out"
+"$BPFTOOL" btf dump file /sys/kernel/btf/vmlinux format c > "$out"
 echo "wrote $out ($(wc -l < "$out") lines)"

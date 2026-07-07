@@ -16,6 +16,13 @@ internal/bpfloader/*_bpfeb.go
 /argus
 /argus-server
 
+# Local development output and secrets
+/fleet-certs/
+/configs/*.local.yaml
+.env
+.env.*
+
+
 # Go
 *.test
 *.out

@@ -1,12 +1,11 @@
 # Contributing to ARGUS
 
-Thanks for helping build ARGUS. This is a short, enforced set of expectations;
-the deeper "how" lives in `CLAUDE.md` and `.claude/skills/`.
+Thanks for helping build ARGUS. This is the short set of engineering
+expectations for changes to the agent, control plane, rules, and documentation.
 
 ## Before you start
 
-- Read `CLAUDE.md` (the working agreement) and the relevant skill in
-  `.claude/skills/`.
+- Read the README and the subsystem document for the area you are changing.
 - Enforcement work additionally requires reading `docs/SAFETY.md`.
 
 ## Build and check
@@ -23,9 +22,8 @@ Every change must leave `make fmt vet lint test` green.
 
 ## Standards
 
-- **Clean code** as defined in `.claude/skills/clean-code` and `go-style`: small
-  single-purpose functions, intention-revealing names, errors wrapped with
-  context, comments that explain *why*.
+- **Clean code:** small single-purpose functions, intention-revealing names,
+  errors wrapped with context, and comments that explain *why*.
 - **The ABI invariant:** if you change `struct event` in `bpf/common.h`, update
   `internal/decode/wire.go` (offsets + `WireSize`), the `EventType` enums in both
   languages, and `wire_test.go`, in the same commit.

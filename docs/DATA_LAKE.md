@@ -1,12 +1,9 @@
-# Data Lake, Event Bus & OCSF (Platform v2 — Phase 12)
+# Data Lake, Event Bus & OCSF
 
-ARGUS v2 scales from a single host to a fleet **without changing the binary**.
-Every heavy component sits behind a Go interface with a light default, so the
-agent and control plane run with zero infrastructure out of the box and grow
-into a columnar lake when you need billions of searchable events.
-
-This is Phase 12 of `docs/PLATFORM_V2_MASTER_PLAN.md`. It honours the platform
-principles: FOSS-first, zero phone-home, and a working single-binary mode.
+ARGUS scales from a single host to a fleet **without changing the binary**. Every
+heavy component sits behind a Go interface with a light default, so the agent and
+control plane run with zero infrastructure out of the box and grow into a
+columnar lake when you need billions of searchable events.
 
 ## OCSF projection
 

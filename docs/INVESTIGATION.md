@@ -1,14 +1,13 @@
-# Investigation: Attack Graph & Case Management (Platform v2 — Phase 15)
+# Investigation: Attack Graph & Case Management
 
 When a host lights up, an analyst needs two things fast: to **see the story** and
-to **work it**. Phase 15 adds both — a reconstructed attack graph and a forensic
+to **work it**. ARGUS provides a reconstructed attack graph and a forensic
 timeline, plus a case manager to assign, discuss, gather evidence, and export a
-report. It builds on the event lake (Phase 14) and reuses the triage narrative
-(Phase 9) so a finished investigation reads as one coherent account.
+report. It builds on the event lake and reuses the triage narrative so a finished
+investigation reads as one coherent account.
 
-This is Phase 15 of `docs/PLATFORM_V2_MASTER_PLAN.md`. It adds no required
-infrastructure, sends nothing out, and keeps every report free of machine- or
-developer-specific data.
+The feature adds no required infrastructure, sends nothing out, and keeps every
+report free of machine- or developer-specific data.
 
 ## Attack graph (`server/investigate`)
 
@@ -59,7 +58,7 @@ and written to the admin **audit log**.
 Case management is analyst workflow — it groups alerts and never touches an agent
 or the fleet — so, like the other read endpoints, it stays usable in
 single-binary mode without a token, while the fleet's kill/quarantine endpoints
-remain token-gated (Phase 8). Bind the admin API to localhost or put it behind an
+remain token-gated. Bind the admin API to localhost or put it behind an
 authenticating proxy, as its documentation states.
 
 ## Reports
@@ -83,4 +82,4 @@ and **Generate report**. Clicking a graph node shows its details.
 
 Investigation is read and annotate only. It surfaces what happened and lets an
 analyst organise it; it never issues a response. Turning an investigation into an
-automated action is SOAR (Phase 17), behind the `off → dry-run → enforce` gate.
+automated action is SOAR, behind the `off → dry-run → enforce` gate.

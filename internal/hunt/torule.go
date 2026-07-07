@@ -8,8 +8,8 @@ import (
 
 // RuleMeta is the metadata an analyst supplies when promoting a saved hunt to a
 // detection rule. The match tree is derived from the query itself, so the rule
-// fires on exactly what the hunt found — closing the loop between hunting the
-// unknown (Phase 14) and codifying it as a rule (Phase 16).
+// fires on exactly what the hunt found, closing the loop between investigation
+// and tested detection content.
 type RuleMeta struct {
 	ID          string
 	Name        string

@@ -48,8 +48,7 @@ type adminAPI struct {
 	// endpoint is disabled rather than minting from a CA it does not hold.
 	issuer *fleet.CertIssuer
 
-	// summarizer produces incident triage. It defaults to the offline template;
-	// serve.go upgrades it to the Claude provider when explicitly enabled.
+	// summarizer produces incident triage using the offline template.
 	summarizer triage.Summarizer
 
 	// lake is the queryable event history the threat-hunting engine searches. It
@@ -77,7 +76,7 @@ type adminAPI struct {
 func newAdminAPI(backing store.Store, rules *ruleset.Provider, ttl time.Duration, rbac *authz, issuer *fleet.CertIssuer, lake eventstore.Store, logger *slog.Logger) *adminAPI {
 	a := &adminAPI{
 		store: backing, rules: rules, ttl: ttl, authz: rbac, issuer: issuer, lake: lake, logger: logger,
-		summarizer: triage.New(triage.Config{}, logger), // template by default; serve.go may upgrade
+		summarizer: triage.New(),
 		cases:      cases.NewMemory(),
 		stream:     newBroadcaster(), metrics: newServerMetrics(backing),
 		audit: newAuditLog(nil, nil, logger), // serve.go upgrades this to a signed, file-backed log
@@ -287,8 +286,7 @@ func (a *adminAPI) handleAlertByID(w http.ResponseWriter, r *http.Request) {
 // handleTriage produces a triage report for one alert (typically an incident): a
 // natural-language summary, severity, containment steps, and an optional rule
 // draft. It reconstructs the incident's context from the host's recent alerts,
-// then runs the configured summarizer — the offline template by default, or Claude
-// when the operator enabled it. Read-only: it surfaces analysis, queues nothing.
+// then runs the configured summarizer — the offline template. Read-only: it surfaces analysis, queues nothing.
 func (a *adminAPI) handleTriage(w http.ResponseWriter, r *http.Request) {
 	record, ok := a.store.AlertByID(r.PathValue("id"))
 	if !ok {

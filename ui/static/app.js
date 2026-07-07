@@ -287,7 +287,7 @@ function openHuntDrawer(r) {
 }
 
 // saveAsRule opens a small form in the drawer; on submit it asks the server to
-// convert the current query into rule YAML (Phase 14 → 16) and shows it to copy.
+// convert the current query into rule YAML and shows it to copy.
 function saveAsRule() {
   const query = $("#q-input").value.trim();
   if (!query) { toast("Write a query first."); return; }
