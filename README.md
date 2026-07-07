@@ -4,7 +4,7 @@
 
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Go](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white)](go.mod)
 [![Kernel](https://img.shields.io/badge/kernel-5.8%2B%20(CO--RE)-orange)](docs/ARCHITECTURE.md)
 
 ARGUS watches the Linux kernel directly through eBPF, turns raw process / file /
@@ -72,7 +72,7 @@ Full detail in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ### Prerequisites
 
 - Linux kernel **5.8+** with BTF (`/sys/kernel/btf/vmlinux` exists)
-- `clang`/`llvm` + `bpftool` to build the eBPF objects, `go` 1.24+ for the agent
+- `clang`/`llvm` + `bpftool` to build the eBPF objects, `go` 1.25+ for the agent
 - `CAP_BPF` + `CAP_SYS_ADMIN` (+ `CAP_PERFMON`) or root to load programs
 
 ```bash

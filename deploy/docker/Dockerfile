@@ -7,7 +7,7 @@
 # At runtime the container needs access to the host kernel:
 #   docker run --privileged --pid=host -v /sys/kernel/btf:/sys/kernel/btf:ro argus
 
-FROM golang:1.24 AS build
+FROM golang:1.25 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

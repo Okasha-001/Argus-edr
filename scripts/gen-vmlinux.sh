@@ -11,21 +11,30 @@ if [[ ! -r /sys/kernel/btf/vmlinux ]]; then
   exit 1
 fi
 
-# Try to find a working bpftool binary. The default wrapper might fail if there's a kernel version mismatch.
-BPFTOOL=""
-if command -v bpftool >/dev/null 2>&1 && bpftool --version >/dev/null 2>&1; then
-  BPFTOOL="bpftool"
-else
-  # Search for any installed bpftool binary directly in the linux-tools directories
-  # to bypass the broken wrapper script.
-  candidate=$(find /usr/lib/linux-tools /usr/lib/linux-tools-* -name bpftool -type f -executable 2>/dev/null | head -n 1)
-  if [[ -n "$candidate" ]]; then
-    BPFTOOL="$candidate"
-  fi
-fi
+# Try to find a working bpftool binary. The linux-tools wrapper often fails on CI when
+# the packaged tools don't match the running kernel; prefer a real binary on disk.
+find_bpftool() {
+  local candidate
+  for candidate in \
+    "$(command -v bpftool 2>/dev/null || true)" \
+    /usr/sbin/bpftool \
+    /usr/bin/bpftool \
+    $(find /usr/lib/linux-tools /usr/lib/linux-tools-* -name bpftool -type f -executable 2>/dev/null); do
+    [[ -n "$candidate" && -x "$candidate" ]] || continue
+    if "$candidate" --version >/dev/null 2>&1; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
 
-if [[ -z "$BPFTOOL" ]]; then
-  echo "error: bpftool not found or not working — install linux-tools for your kernel." >&2
+BPFTOOL=""
+if BPFTOOL="$(find_bpftool)"; then
+  :
+else
+  echo "error: bpftool not found or not working — install bpftool or linux-tools." >&2
+  echo "       e.g. sudo apt-get install -y bpftool linux-tools-common" >&2
   exit 1
 fi
 

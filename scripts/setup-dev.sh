@@ -5,19 +5,16 @@ set -euo pipefail
 
 if ! command -v apt-get >/dev/null 2>&1; then
   echo "This helper targets Debian/Ubuntu. On other distros install the" >&2
-  echo "equivalents of: clang llvm bpftool go (1.24+)." >&2
+  echo "equivalents of: clang llvm bpftool go (1.25+)." >&2
   exit 1
 fi
 
-sudo apt-get update
-sudo apt-get install -y \
-  clang llvm libbpf-dev build-essential \
-  "linux-headers-$(uname -r)" || true
-sudo apt-get install -y "linux-tools-$(uname -r)" || sudo apt-get install -y linux-tools-generic || true
+"$(dirname "$0")/install-ebpf-toolchain.sh"
+sudo apt-get install -y build-essential "linux-headers-$(uname -r)" || true
 
 if ! command -v go >/dev/null 2>&1; then
   echo
-  echo "Go was not found. Install Go 1.24+ from https://go.dev/dl/ and put it on PATH."
+  echo "Go was not found. Install Go 1.25+ from https://go.dev/dl/ and put it on PATH."
 fi
 
 echo
