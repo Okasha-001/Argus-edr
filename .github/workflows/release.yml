@@ -30,7 +30,7 @@ jobs:
 
       - name: Build eBPF objects and binaries
         run: |
-          ./scripts/gen-vmlinux.sh
+          ./scripts/gen-vmlinux.sh --ci
           make all
 
       - name: Package deb + rpm

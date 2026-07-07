@@ -10,7 +10,6 @@ package triage
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -176,20 +175,4 @@ func orUnknown(value string) string {
 		return "unknown"
 	}
 	return value
-}
-
-// sortedTactics returns the distinct tactics in the incident, used by the
-// template to summarize the kill chain.
-func sortedTactics(techniques []Technique) []string {
-	seen := map[string]bool{}
-	var tactics []string
-	for _, technique := range techniques {
-		tactic := strings.TrimSpace(technique.Tactic)
-		if tactic != "" && !seen[tactic] {
-			seen[tactic] = true
-			tactics = append(tactics, tactic)
-		}
-	}
-	sort.Strings(tactics)
-	return tactics
 }

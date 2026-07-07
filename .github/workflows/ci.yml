@@ -41,8 +41,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install eBPF toolchain
         run: ./scripts/install-ebpf-toolchain.sh
-      - name: Generate vmlinux.h from kernel BTF
-        run: ./scripts/gen-vmlinux.sh
+      - name: Generate vmlinux.h (CI pre-built — real BTF tested in kernel-matrix)
+        run: ./scripts/gen-vmlinux.sh --ci
       - name: Compile eBPF objects
         run: make bpf
 
